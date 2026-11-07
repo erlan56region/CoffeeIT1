@@ -6,6 +6,19 @@
 'use strict';
 
 const W = 1280, H = 720;
+
+// Полифилл roundRect для старых браузеров (Safari < 16, старые Chrome)
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    r = Math.min(typeof r === 'number' ? r : 0, w / 2, h / 2);
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+  };
+}
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
 
@@ -98,7 +111,7 @@ const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h 
 function seeded(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
 
 function outlinedText(txt, x, y, size, fill = '#fff', align = 'center', stroke = '#111', font = 'Bangers') {
-  ctx.font = `${size}px ${font}, Impact, sans-serif`;
+  ctx.font = `${size}px ${font}, Rubik, Impact, Arial Black, sans-serif`;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
@@ -970,19 +983,34 @@ function drawWin() {
 
 // ---------- Главный цикл ----------
 let last = performance.now();
+let lastError = null;
 function frame(now) {
-  const dt = Math.min(1 / 30, (now - last) / 1000);
+  const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));
   last = now;
-  update(dt);
-  render();
+  try {
+    update(dt);
+    render();
+  } catch (e) {
+    // Не даём игре "зависнуть" из-за одной ошибки — показываем её и продолжаем цикл
+    if (!lastError) console.error(e);
+    lastError = e;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, H - 40, W, 40);
+    ctx.fillStyle = '#ff6b6b'; ctx.font = '16px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('Ошибка: ' + (e && e.message), 12, H - 20);
+  }
   for (const k in pressed) pressed[k] = false;
   requestAnimationFrame(frame);
 }
 
 
-loadAssets().then(() => {
+// Сразу запускаем цикл (показывает "ЗАГРУЗКА..."), затем ждём картинки и шрифты (не дольше 3 сек.)
+requestAnimationFrame(frame);
+const fontsReady = (document.fonts && document.fonts.load)
+  ? Promise.all(['40px Bangers', '700 40px Rubik', '900 40px Rubik'].map(f => document.fonts.load(f, 'ДЖИМ GROOVY').catch(() => {})))
+  : Promise.resolve();
+Promise.race([Promise.all([loadAssets(), fontsReady]), new Promise(r => setTimeout(r, 3000))]).then(() => {
   state = 'title';
   stateT = 1;
-  requestAnimationFrame(frame);
 });
 })();
