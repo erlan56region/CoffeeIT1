@@ -14,6 +14,8 @@ html = html.replace('<link rel="stylesheet" href="style.css" />', f'<style>\n{cs
 html = html.replace('<link rel="icon" href="assets/icon.png" />', f'<link rel="icon" href="{b64("assets/icon.png", "image/png")}" />')
 import json
 html = html.replace('<script src="game.js"></script>', f'<script>window.__ASSETS = {json.dumps(assets)};</script>\n<script>\n{js}\n</script>')
-out = os.path.join(D, '..', 'jim-game.html')
-open(out, 'w', encoding='utf-8').write(html)
-print('OK ->', os.path.abspath(out), os.path.getsize(out) // 1024, 'KB')
+# jim-game.html — для скачивания; index.html в корне — для GitHub Pages (https://<user>.github.io/<repo>/)
+for name in ('jim-game.html', 'index.html'):
+    out = os.path.join(D, '..', name)
+    open(out, 'w', encoding='utf-8').write(html)
+    print('OK ->', os.path.abspath(out), os.path.getsize(out) // 1024, 'KB')
