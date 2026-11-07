@@ -1,0 +1,16 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #07051a; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+#wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+canvas { display: block; width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; image-rendering: auto; background: #000; box-shadow: 0 0 60px #4a2c8a55; }
+#touch { position: fixed; inset: 0; pointer-events: none; display: none; }
+body.is-touch #touch { display: block; }
+.pad { position: absolute; bottom: 18px; display: flex; gap: 14px; pointer-events: auto; }
+.pad.left { left: 18px; }
+.pad.right { right: 18px; align-items: flex-end; }
+.pad button {
+  width: 78px; height: 78px; border-radius: 50%; border: 4px solid #111;
+  background: rgba(255,255,255,0.78); color: #c0262d; font: 900 30px Rubik, sans-serif;
+  box-shadow: 0 4px 0 #111; touch-action: none;
+}
+.pad button.small { width: 70px; height: 70px; font-size: 13px; }
+.pad button.active { background: #ffd23f; transform: translateY(3px); box-shadow: 0 1px 0 #111; }
