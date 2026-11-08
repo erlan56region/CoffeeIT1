@@ -6,7 +6,7 @@ class CanvasRenderingContext2D {
 }
 const gradient = {addColorStop(){}};
 for (const name of ['save','restore','translate','rotate','scale','setTransform','fillRect','strokeRect','beginPath','closePath','moveTo','lineTo','arcTo','arc','ellipse','fill','stroke','drawImage','clip','quadraticCurveTo','bezierCurveTo','strokeText','fillText','roundRect']) CanvasRenderingContext2D.prototype[name]=function(){};
-CanvasRenderingContext2D.prototype.createLinearGradient=function(){return gradient};
+CanvasRenderingContext2D.prototype.createLinearGradient=CanvasRenderingContext2D.prototype.createRadialGradient=function(){return gradient};
 CanvasRenderingContext2D.prototype.measureText=function(t){return {width:String(t).length*11}};
 const cvs = new CanvasRenderingContext2D();
 cvs.width=1280;cvs.height=720;
@@ -49,8 +49,13 @@ const pointer=(type,x,y,pointerType='mouse')=>(canvasListeners[type]||[]).forEac
  for(let i=0;i<30;i++){frame.now+=16.67;frame();}
  listeners.pointerup.forEach(f=>f({}));
  for(let i=0;i<30;i++){frame.now+=16.67;frame();}
- for(let stage=0;stage<15;stage++){sandbox.__test.loadStage(stage);for(let i=0;i<35;i++){frame.now+=16.67;frame();}const info=sandbox.__test.get();if(info.stageIndex!==stage)throw Error('Stage failed '+stage);if(info.level.crows.some(c=>c.typeId===undefined))throw Error('Untyped enemy '+stage);}
+ if(sandbox.Campaign.ENEMIES.length<40)throw Error('Enemy roster was not expanded');
+if(new Set(sandbox.Campaign.STAGES.map(s=>s.mechanic)).size!==15)throw Error('Every stage must have a unique mechanic');
+for(let stage=0;stage<15;stage++){sandbox.__test.loadStage(stage);for(let i=0;i<35;i++){frame.now+=16.67;frame();}const info=sandbox.__test.get();if(info.stageIndex!==stage)throw Error('Stage failed '+stage);if(info.level.crows.some(c=>c.typeId===undefined))throw Error('Untyped enemy '+stage);}
+sandbox.__test.loadStage(0);let grabbed=sandbox.__test.get();grabbed.level.crows.forEach((c,i)=>{if(i)c.dead=true;});const crow=grabbed.level.crows[0];crow.x=grabbed.player.x+20;crow.y=grabbed.player.y+50;
+for(let i=0;i<10;i++){frame.now+=16.67;frame();}if(!crow.grabMode||crow.grabT>3)throw Error('Crow did not grab Jim');
+for(let i=0;i<190;i++){frame.now+=16.67;frame();}if(crow.grabMode)throw Error('Crow did not release Jim after three seconds');
 for(let i=0;i<1400;i++){frame.now+=16.67;frame();}
 if(errors)throw Error(`Game logged ${errors} runtime errors`);
- console.log('Campaign smoke test OK: 15 stages, race, directional fire, SNES assets and rendered frames');
+ console.log('Campaign smoke test OK: 15 unique mechanics, 40 enemies, 3-second crow grab; 15 stages, race, directional fire, SNES assets and rendered frames');
 })().catch(e=>{console.error(e);process.exitCode=1});
