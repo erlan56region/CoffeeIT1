@@ -29,7 +29,13 @@ const JIM_H = 160, JIM_SCALE = JIM_H / 300;
 
 // ---------- Загрузка ассетов ----------
 const IMG = {};
-const assetList = ['jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg'];
+const assetList = [
+  'jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg',
+  ...Array.from({ length: 8 }, (_, i) => `run-${i}.png`),
+  'jump-rise.png', 'jump-top.png', 'jump-fall.png', 'land.png',
+  'shoot-0.png', 'shoot-1.png',
+  ...Array.from({ length: 4 }, (_, i) => `death-${i}.png`)
+];
 function loadAssets() {
   return Promise.all(assetList.map(f => new Promise(res => {
     const i = new Image();
@@ -317,6 +323,8 @@ function killPlayer() {
   player.vx = -player.face * 260;
   player.glide = false;
   player.shootAnim = 0;
+  player.recoil = 0;
+  player.muzzleFlash = 0;
   lives--;
   SFX.die();
   burst(player.x + player.w / 2, player.y + 55, '#ff9fc6', 24, 380, 7);
@@ -436,7 +444,7 @@ function updatePlayer(dt) {
   p.shootCd -= dt;
   p.shootAnim = Math.max(0, p.shootAnim - dt);
   p.muzzleFlash = Math.max(0, p.muzzleFlash - dt);
-  p.recoil = Math.max(0, p.recoil - dt * 8);
+  p.recoil = Math.max(0, p.recoil - dt * 6);
   if ((keys.shoot || mouseShooting) && p.ammo > 0) {
     p.aimAngle = getAimAngle(p);
     if (Math.abs(Math.cos(p.aimAngle)) > 0.12) p.face = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
@@ -447,7 +455,7 @@ function updatePlayer(dt) {
       p.shootCd = 0.14;
       p.aimAngle = getAimAngle(p);
       if (Math.abs(Math.cos(p.aimAngle)) > 0.12) p.face = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
-      p.shootAnim = 0.25; p.muzzleFlash = 0.09; p.recoil = 1;
+      p.shootAnim = 0.32; p.muzzleFlash = 0.12; p.recoil = 1;
       const m = muzzle(p.aimAngle), cs = Math.cos(p.aimAngle), sn = Math.sin(p.aimAngle);
       bullets.push({ x: m.x, y: m.y, vx: cs * 1150 + p.vx * 0.2, vy: sn * 1150 + p.vy * 0.08,
         angle: p.aimAngle, life: 0.9 });
@@ -750,7 +758,8 @@ function drawHeart(x, y, t) {
 
 function drawJim() {
   const p = player, img = IMG.jim;
-  const bodyImg = IMG['jim-body'] && IMG['jim-body'].width ? IMG['jim-body'] : img;
+  const baseBody = IMG['jim-body'] && IMG['jim-body'].width ? IMG['jim-body'] : img;
+  let bodyImg = baseBody;
   const armImg = IMG['jim-arm'];
   if (!img || !img.width) return;
   if (p.inv > 0 && Math.floor(p.inv * 14) % 2 === 0 && state === 'play') return;
@@ -758,6 +767,21 @@ function drawJim() {
   const sw = img.width * JIM_SCALE, sh = JIM_H;
   const running = state === 'play' && p.onGround && Math.abs(p.vx) > 30;
   const phase = p.walkT * 1.45;
+  const firing = state === 'play' && (p.shootAnim > 0 || keys.shoot || mouseShooting);
+
+  // Настоящая покадровая анимация: меняются позы ног и корпуса, а не только положение спрайта.
+  if (state === 'dead' || state === 'gameover') {
+    bodyImg = IMG[`death-${Math.floor(p.deathT * 10) % 4}`] || baseBody;
+  } else if (running) {
+    bodyImg = IMG[`run-${Math.floor(p.walkT * 1.2) % 8}`] || baseBody;
+  } else if (!p.onGround && state === 'play') {
+    const jumpFrame = p.vy < -220 ? 'jump-rise' : p.vy < 170 ? 'jump-top' : 'jump-fall';
+    bodyImg = IMG[jumpFrame] || baseBody;
+  } else if (p.squash > 0.2) {
+    bodyImg = IMG.land || baseBody;
+  } else if (firing) {
+    bodyImg = (p.recoil > 0.45 ? IMG['shoot-1'] : IMG['shoot-0']) || baseBody;
+  }
   let sx = 1, sy = 1, rot = 0, bob = 0;
 
   // Бег: пружинящий шаг, наклон вперёд и пыль из-под ног.
@@ -773,7 +797,7 @@ function drawJim() {
     if (p.vy < 0) { sy *= 1.1; sx *= 0.94; rot = clamp(p.vx / 3000, -0.12, 0.12) - 0.045; }
     else { sy *= 0.98; sx *= 1.025; rot = clamp(p.vx / 2800, -0.14, 0.14) + 0.04; }
   }
-  if (p.shootAnim > 0) rot -= p.recoil * 0.045;
+  if (p.shootAnim > 0) rot -= p.recoil * 0.12;
   if (state === 'dead' || state === 'gameover') { rot = p.deathT * 8; bob = 0; sx = 1; sy = 1; }
 
   // Мягкая тень и штрихи скорости делают движение заметным даже на статичном спрайте.
@@ -799,13 +823,14 @@ function drawJim() {
   }
 
   ctx.save();
-  ctx.translate(cx, bottom - bob);
+  ctx.translate(cx - p.face * p.recoil * 8, bottom - bob);
   ctx.rotate(rot * p.face);
   ctx.scale(sx * p.face, sy);
-  ctx.drawImage(bodyImg, -sw * 0.45, -sh, sw, sh);
+  const frameX = bodyImg.width === 300 ? -sw * 0.45 - 34 * JIM_SCALE : -sw * 0.45;
+  ctx.drawImage(bodyImg, frameX, -sh, bodyImg.width * JIM_SCALE, bodyImg.height * JIM_SCALE);
 
   // Рука и бластер вращаются отдельно от тела и следуют за прицелом.
-  if (armImg && armImg.width) {
+  if (armImg && armImg.width && state === 'play') {
     const px = -sw * 0.45 + 153 / 232 * sw;
     const py = -sh + 145 / 300 * sh;
     const aiming = p.shootAnim > 0 || keys.shoot || mouseShooting;
@@ -813,8 +838,8 @@ function drawJim() {
     const localAim = aiming ? (p.face > 0 ? p.aimAngle : Math.PI - p.aimAngle) + 0.22 : 0;
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(localAim - p.recoil * 0.12);
-    ctx.translate(-Math.cos(localAim) * p.recoil * 6, -Math.sin(localAim) * p.recoil * 6);
+    ctx.rotate(localAim - p.recoil * 0.2);
+    ctx.translate(-Math.cos(localAim) * p.recoil * 10, -Math.sin(localAim) * p.recoil * 10);
     ctx.drawImage(armImg, -sw * 0.45 - px, -sh - py, sw, sh);
     ctx.restore();
   }
@@ -823,7 +848,7 @@ function drawJim() {
   // Яркая вспышка, кольцо и отдача видны при каждом выстреле.
   if (p.muzzleFlash > 0 && state === 'play') {
     const m = muzzle(p.aimAngle), mx = m.x - camX, my = m.y;
-    const power = p.muzzleFlash / 0.09, size = 18 + power * 18;
+    const power = p.muzzleFlash / 0.12, size = 24 + power * 24;
     ctx.save(); ctx.translate(mx, my); ctx.rotate(p.aimAngle);
     ctx.shadowColor = '#65f5ff'; ctx.shadowBlur = 26;
     ctx.fillStyle = 'rgba(86,239,255,0.35)'; ctx.beginPath(); ctx.arc(0, 0, size * 1.25, 0, Math.PI * 2); ctx.fill();
@@ -1125,7 +1150,8 @@ function render() {
   drawWorld();
   drawHUD();
   if (state === 'pause') drawOverlay('ПАУЗА', 'Нажми P, чтобы продолжить', '#ffe14a');
-  if (state === 'dead') drawOverlay('ОЙ-ОЙ!', 'Осталось жизней: ' + lives, '#ff9fc6');
+  // Сначала показываем саму анимацию смерти, затем затемняем сцену.
+  if (state === 'dead' && stateT > 0.55) drawOverlay('ОЙ-ОЙ!', 'Осталось жизней: ' + lives, '#ff9fc6');
   if (state === 'gameover') {
     drawOverlay('КОНЕЦ ИГРЫ', 'Очки: ' + score + '  •  ENTER — заново', '#ff4a4a');
   }

@@ -7,7 +7,11 @@ html = open(os.path.join(D, 'index.html'), encoding='utf-8').read()
 css = open(os.path.join(D, 'style.css'), encoding='utf-8').read()
 js = open(os.path.join(D, 'game.js'), encoding='utf-8').read()
 css = re.sub(r"url\('(fonts/[^']+)'\)", lambda m: f"url('{b64(m.group(1), 'font/woff2')}')", css)
-assets = {f: b64('assets/' + f, 'image/jpeg' if f.endswith('.jpg') else 'image/png') for f in ['jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg']}
+asset_files = ['jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg']
+asset_files += [f'run-{i}.png' for i in range(8)]
+asset_files += ['jump-rise.png', 'jump-top.png', 'jump-fall.png', 'land.png', 'shoot-0.png', 'shoot-1.png']
+asset_files += [f'death-{i}.png' for i in range(4)]
+assets = {f: b64('assets/' + f, 'image/jpeg' if f.endswith('.jpg') else 'image/png') for f in asset_files}
 js = js.replace("i.src = 'assets/' + f;", "i.src = (window.__ASSETS && window.__ASSETS[f]) || ('assets/' + f);")
 assert '__ASSETS' in js
 html = html.replace('<link rel="stylesheet" href="style.css" />', f'<style>\n{css}\n</style>')
