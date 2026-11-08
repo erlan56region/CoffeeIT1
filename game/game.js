@@ -68,6 +68,31 @@ function tone(type, f0, f1, dur, vol = 0.15, delay = 0) {
   o.connect(g).connect(actx.destination);
   o.start(t); o.stop(t + dur + 0.02);
 }
+// Short look-ahead scheduler: no timers, downloads or accumulated notes on resume.
+let musicStep=0, musicNext=0, musicStage=-1;
+function updateMusic() {
+  if(!actx || muted || !level || state!=='play' || actx.state==='suspended') {
+    musicNext=0; return;
+  }
+  const a=level.cfg.atmosphere;
+  if(musicStage!==stageIndex){musicStage=stageIndex;musicStep=0;musicNext=0;}
+  if(!musicNext || musicNext<actx.currentTime-.2)musicNext=actx.currentTime+.025;
+  const step=60/a.bpm/4;
+  const scales=[[0,3,5,7,10,12,15,14],[0,1,5,7,8,12,13,7],[0,2,3,7,9,12,10,7],[0,2,5,7,9,12,14,7],[0,4,7,11,12,16,14,7],[0,3,7,10,12,15,17,7]];
+  const scale=scales[a.voice], section=Math.min(2,Math.floor(player.x/WORLD_W*3));
+  const note=(m,type,d,v)=>{const f=440*Math.pow(2,(m-69)/12);tone(type,f,f,d,v,musicNext-actx.currentTime);};
+  while(musicNext<actx.currentTime+.12){
+    const n=musicStep++, beat=n%16, bar=Math.floor(n/16)%4, chord=[0,5,3,7][bar];
+    if(n%4===0)note(a.root+chord,'triangle',step*3,.045);
+    if(n%2===0){const degree=scale[(Math.floor(n/2)+bar*2+section)%scale.length];note(a.root+24+degree+chord,a.voice===1?'sawtooth':'sine',step*1.5,.018);}
+    if(beat===0||beat===8)tone('sine',115,35,.12,.055,musicNext-actx.currentTime);
+    if(beat===4||beat===12)tone('triangle',210,65,.075,.025,musicNext-actx.currentTime);
+    if(section>0&&n%2)note(a.root+36+scale[(n+section)%8],'triangle',step*.5,.009);
+    if(n%16===0)[0,7,12].forEach(d=>note(a.root+12+chord+d,'sine',step*12,.008));
+    musicNext+=step;
+  }
+}
+
 const SFX = {
   shoot: () => tone('square', 1200, 300, 0.09, 0.07),
   jump: () => tone('sine', 280, 640, 0.16, 0.12),
@@ -984,7 +1009,7 @@ function drawBackground() {
   // Фон с параллаксом (тайлы с зеркалированием для бесшовности)
   const bg = IMG.bg;
   ctx.fillStyle = '#0a0620'; ctx.fillRect(0, 0, W, H);
-  if (bg && bg.width) {
+  if (bg && bg.width && (!level || state === 'title')) {
     const bw = bg.width * (H / bg.height);
     const off = -(camX * 0.15) % (bw * 2);
     for (let i = -1; i < 4; i++) {
@@ -996,6 +1021,7 @@ function drawBackground() {
       else { ctx.save(); ctx.translate(x + bw, 0); ctx.scale(-1, 1); ctx.drawImage(bg, 6, 0, bg.width - 12, bg.height, -1, 0, bw + 2, H); ctx.restore(); }
     }
   }
+  if(level && level.cfg.atmosphere && state!=='title'){const a=level.cfg.atmosphere,g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,a.sky);g.addColorStop(1,a.horizon);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
   // Мерцающие звёзды (ближний слой)
   for (const s of stars) {
     const x = ((s.x - camX * 0.4) % 2600 + 2600) % 2600 - 100;
@@ -1016,7 +1042,7 @@ function drawBackground() {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
-  if (level && level.cfg) drawThemeScenery(level.cfg.theme);
+  if (level && level.cfg) { drawThemeScenery(level.cfg.theme); drawAtmosphere(); }
 }
 
 function drawThemeScenery(theme) {
@@ -1050,6 +1076,54 @@ function drawThemeScenery(theme) {
   }else if(theme==='armada'){
     for(let i=-1;i<5;i++){const x=shift+i*420,y=160+(i%3)*100;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+180,y-35);ctx.lineTo(x+280,y);ctx.lineTo(x+180,y+35);ctx.closePath();ctx.fill();ctx.stroke();}
   }
+  ctx.restore();
+}
+
+// Three authored landmarks per world, anchored in world space rather than a tiled wallpaper.
+function drawAtmosphere(){
+  const a=level.cfg.atmosphere, color=level.cfg.color;
+  ctx.save();
+  for(let chapter=0;chapter<3;chapter++){
+    const x=(chapter+.5)*WORLD_W/3-camX*.6;
+    if(x < -400 || x>W+400)continue;
+    ctx.save();ctx.translate(x,390);ctx.strokeStyle=color;ctx.fillStyle=a.sky;ctx.lineWidth=4;
+    const type=(stageIndex+chapter)%5;
+    if(type===0){ // Huge salvage crane / orbital mast
+      ctx.fillRect(-65,-260,40,390);ctx.strokeRect(-65,-260,40,390);
+      ctx.beginPath();ctx.moveTo(-45,-240);ctx.lineTo(230,-310);ctx.lineTo(230,-100+Math.sin(gameTime)*8);ctx.stroke();
+      ctx.beginPath();ctx.arc(230,-80+Math.sin(gameTime)*8,23,0,Math.PI);ctx.stroke();
+    }else if(type===1){ // Living specimen tank
+      ctx.beginPath();ctx.roundRect(-130,-240,260,350,65);ctx.fill();ctx.stroke();
+      ctx.globalAlpha=.22;ctx.fillStyle=color;ctx.fillRect(-110,-210,220,290);ctx.globalAlpha=1;
+      ctx.beginPath();ctx.ellipse(Math.sin(gameTime*.4)*25,-65,70,40,.2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(28,-75,9,0,Math.PI*2);ctx.fill();
+    }else if(type===2){ // Crystal organ / shattered cathedral
+      for(let i=-3;i<=3;i++){const h=120+(3-Math.abs(i))*48;ctx.beginPath();ctx.moveTo(i*43-24,100);ctx.lineTo(i*43-18,-h);ctx.lineTo(i*43,-h-40);ctx.lineTo(i*43+18,-h);ctx.lineTo(i*43+24,100);ctx.closePath();ctx.fill();ctx.stroke();}
+    }else if(type===3){ // Celestial eye, moon or reactor
+      ctx.beginPath();ctx.arc(0,-100,150,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.save();ctx.rotate(-.25);ctx.beginPath();ctx.ellipse(0,-100,230,40,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+      ctx.globalAlpha=.25;ctx.fillStyle=color;ctx.beginPath();ctx.arc(0,-100,90+Math.sin(gameTime)*5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+    }else{ // Shipwreck / flagship
+      ctx.beginPath();ctx.moveTo(-260,-120);ctx.lineTo(-100,-210);ctx.lineTo(170,-180);ctx.lineTo(260,-100);ctx.lineTo(70,-50);ctx.lineTo(-180,-65);ctx.closePath();ctx.fill();ctx.stroke();
+      for(let i=0;i<7;i++){ctx.fillStyle=color;ctx.globalAlpha=.4+.2*Math.sin(gameTime+i);ctx.fillRect(-150+i*45,-140,18,12);}ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
+  // Stage-specific motes: snow, embers, spores, chemical rain and orbital dust.
+  ctx.fillStyle=color;
+  for(let i=0;i<42;i++){
+    const speed=stageIndex===5?20:stageIndex===10?-45:9;
+    const x=((i*193.7-camX*.38+Math.sin(gameTime*.4+i)*22)%W+W)%W;
+    const y=((i*83.3+gameTime*speed)%570+570)%570;
+    ctx.globalAlpha=.15+.3*(.5+.5*Math.sin(i+gameTime));
+    ctx.fillRect(x,y,stageIndex===5?4:2,stageIndex===9?12:3);
+  }
+  ctx.globalAlpha=1;
+  // Quiet chapter caption, away from the action and the objective HUD.
+  const chapter=Math.min(2,Math.floor((player?player.x:0)/WORLD_W*3));
+  ctx.font='18px Rubik, sans-serif';ctx.textAlign='left';ctx.fillStyle='#ffffffb8';
+  ctx.fillText(a.chapters[chapter],26,136);
+  ctx.font='13px Rubik, sans-serif';ctx.fillStyle='#ffffff88';ctx.fillText('M — звук '+(muted?'выкл.':'вкл.')+' · P — пауза',26,157);
   ctx.restore();
 }
 
@@ -1633,6 +1707,7 @@ function frame(now) {
   last = now;
   try {
     update(dt);
+    updateMusic();
     render();
   } catch (e) {
     // Не даём игре "зависнуть" из-за одной ошибки — показываем её и продолжаем цикл
