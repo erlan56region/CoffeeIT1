@@ -100,6 +100,9 @@ sequence('run', cells(1130, 1195, [0,42,76,116,169,217,264,314,355,388,429,482,5
 
 # Gun raise / firing / recoil drawings.
 sequence('shoot', cells(55, 140, [0,49,107,165,222]))
+sequence('idle', cells(0, 55, [0,41,79,117,155]))
+face = Image.open(DEST / 'shoot-0.png').crop((7, 0, 38, 27))
+face.save(DEST / 'jim-face.png', optimize=True)
 
 # Takeoff, airborne split, falling and landing.
 for name, box in [
