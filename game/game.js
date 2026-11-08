@@ -31,9 +31,9 @@ const JIM_H = 160, JIM_SCALE = JIM_H / 300;
 const IMG = {};
 const assetList = [
   'jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg',
-  ...Array.from({ length: 8 }, (_, i) => `run-${i}.png`),
+  ...Array.from({ length: 17 }, (_, i) => `run-${i}.png`),
   'jump-rise.png', 'jump-top.png', 'jump-fall.png', 'land.png',
-  'shoot-0.png', 'shoot-1.png',
+  ...Array.from({ length: 4 }, (_, i) => `shoot-${i}.png`),
   ...Array.from({ length: 4 }, (_, i) => `death-${i}.png`)
 ];
 function loadAssets() {
@@ -41,6 +41,7 @@ function loadAssets() {
     const i = new Image();
     i.onload = () => res();
     i.onerror = () => res();
+    i.external = /^(run|jump|land|shoot|death)-/.test(f);
     i.src = 'assets/' + f;
     IMG[f.split('.')[0]] = i;
   })));
@@ -508,8 +509,10 @@ function getAimAngle(p) {
 }
 function muzzle(angle) {
   const p = player, cx = p.x + p.w / 2;
-  const sx = cx + p.face * 26, sy = p.y + 57;
-  return { x: sx + Math.cos(angle) * 46, y: sy + Math.sin(angle) * 46 };
+  const firing = state === 'play' && (p.shootAnim > 0 || keys.shoot || mouseShooting);
+  const sx = cx + p.face * (firing ? 8 : 26), sy = p.y + (firing ? 65 : 57);
+  const length = firing ? 72 : 46;
+  return { x: sx + Math.cos(angle) * length, y: sy + Math.sin(angle) * length };
 }
 const hitbox = c => ({ x: c.x - c.w / 2, y: c.y - c.h / 2, w: c.w, h: c.h });
 const bossBox = () => ({ x: boss.x - boss.w / 2 + 20, y: boss.y - boss.h / 2 + 10, w: boss.w - 40, h: boss.h - 20 });
@@ -773,14 +776,14 @@ function drawJim() {
   if (state === 'dead' || state === 'gameover') {
     bodyImg = IMG[`death-${Math.floor(p.deathT * 10) % 4}`] || baseBody;
   } else if (running) {
-    bodyImg = IMG[`run-${Math.floor(p.walkT * 1.2) % 8}`] || baseBody;
+    bodyImg = IMG[`run-${Math.floor(p.walkT * 1.65) % 17}`] || baseBody;
   } else if (!p.onGround && state === 'play') {
     const jumpFrame = p.vy < -220 ? 'jump-rise' : p.vy < 170 ? 'jump-top' : 'jump-fall';
     bodyImg = IMG[jumpFrame] || baseBody;
   } else if (p.squash > 0.2) {
     bodyImg = IMG.land || baseBody;
   } else if (firing) {
-    bodyImg = (p.recoil > 0.45 ? IMG['shoot-1'] : IMG['shoot-0']) || baseBody;
+    bodyImg = IMG[`shoot-${Math.floor(gameTime * 12) % 4}`] || baseBody;
   }
   let sx = 1, sy = 1, rot = 0, bob = 0;
 
@@ -798,7 +801,14 @@ function drawJim() {
     else { sy *= 0.98; sx *= 1.025; rot = clamp(p.vx / 2800, -0.14, 0.14) + 0.04; }
   }
   if (p.shootAnim > 0) rot -= p.recoil * 0.12;
-  if (state === 'dead' || state === 'gameover') { rot = p.deathT * 8; bob = 0; sx = 1; sy = 1; }
+  if (firing && bodyImg.external) {
+    const localAim = p.face > 0 ? p.aimAngle : Math.PI - p.aimAngle;
+    rot += localAim * 0.35;
+  }
+  if (state === 'dead' || state === 'gameover') {
+    rot = bodyImg.external ? Math.sin(p.deathT * 24) * 0.05 : p.deathT * 8;
+    bob = 0; sx = 1; sy = 1;
+  }
 
   // Мягкая тень и штрихи скорости делают движение заметным даже на статичном спрайте.
   if (p.onGround && state === 'play') {
@@ -826,11 +836,19 @@ function drawJim() {
   ctx.translate(cx - p.face * p.recoil * 8, bottom - bob);
   ctx.rotate(rot * p.face);
   ctx.scale(sx * p.face, sy);
-  const frameX = bodyImg.width === 300 ? -sw * 0.45 - 34 * JIM_SCALE : -sw * 0.45;
-  ctx.drawImage(bodyImg, frameX, -sh, bodyImg.width * JIM_SCALE, bodyImg.height * JIM_SCALE);
+  if (bodyImg.external) {
+    const externalScale = 2.5;
+    const fw = bodyImg.width * externalScale, fh = bodyImg.height * externalScale;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bodyImg, -fw / 2, -fh, fw, fh);
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    const frameX = bodyImg.width === 300 ? -sw * 0.45 - 34 * JIM_SCALE : -sw * 0.45;
+    ctx.drawImage(bodyImg, frameX, -sh, bodyImg.width * JIM_SCALE, bodyImg.height * JIM_SCALE);
+  }
 
-  // Рука и бластер вращаются отдельно от тела и следуют за прицелом.
-  if (armImg && armImg.width && state === 'play') {
+  // Рука исходного HD-спрайта нужна только в режиме ожидания; внешние кадры уже содержат руку.
+  if (!bodyImg.external && armImg && armImg.width && state === 'play') {
     const px = -sw * 0.45 + 153 / 232 * sw;
     const py = -sh + 145 / 300 * sh;
     const aiming = p.shootAnim > 0 || keys.shoot || mouseShooting;

@@ -1,42 +1,60 @@
-"""Build visible, frame-by-frame Jim animations from the original hand-drawn sprite.
+"""Extract Jim's original animation sequences from the public SNES sprite sheet.
 
-Run with Pillow installed: python3 art/build_animations.py
-The game itself has no Python/Pillow dependency; generated PNGs are committed assets.
+Source and attribution: see ART_SOURCES.md.
+Requires Pillow and numpy only for rebuilding; the game uses the generated PNGs directly.
 """
 from pathlib import Path
-from math import sin, cos, pi
-from PIL import Image, ImageDraw, ImageChops
+from collections import deque
+import numpy as np
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / 'game' / 'assets'
-SRC = Image.open(ASSETS / 'jim.png').convert('RGBA')
-W, H = 300, 300  # wider canvas gives swinging legs room; feet remain at y=300
-OX = 34
+SOURCE = ROOT / 'art' / 'source' / 'earthworm-jim-snes-sheet.png'
+DEST = ROOT / 'game' / 'assets'
+SHEET = Image.open(SOURCE).convert('RGB')
 
 
-def polygon_mask(points):
-    mask = Image.new('L', SRC.size, 0)
-    ImageDraw.Draw(mask).polygon(points, fill=255)
-    return mask
+def transparent_cell(box, clean=True):
+    """Remove the green screen and only the white area connected to the cell border."""
+    image = SHEET.crop(box).convert('RGBA')
+    data = np.array(image).astype(np.float32)
+    r, g, b = data[..., 0], data[..., 1], data[..., 2]
+    greenness = g - np.maximum(r, b)
+    alpha = np.clip(1 - (greenness - 35) / 70, 0, 1)
+    # Reduce green fringe while preserving the white suit and dark pixel-art outlines.
+    spill = g > np.maximum(r, b)
+    data[..., 1] = np.where(spill, np.maximum(r, b) + (g - np.maximum(r, b)) * .18, g)
+    data[..., 3] = alpha * 255
+    image = Image.fromarray(data.clip(0, 255).astype(np.uint8)).copy()
 
+    # Some irregular cells include a white corner. Flood only from the outside so
+    # white highlights and the white electrocution pose remain intact.
+    px = image.load()
+    w, h = image.size
+    queue = deque()
+    seen = set()
+    for x in range(w):
+        queue.extend([(x, 0), (x, h - 1)])
+    for y in range(h):
+        queue.extend([(0, y), (w - 1, y)])
+    while queue:
+        x, y = queue.popleft()
+        if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
+            continue
+        seen.add((x, y))
+        red, green, blue, a = px[x, y]
+        if a < 12 or min(red, green, blue) < 250:
+            continue
+        px[x, y] = (red, green, blue, 0)
+        queue.extend([(x-1,y),(x+1,y),(x,y-1),(x,y+1)])
 
-def extract(points):
-    mask = polygon_mask(points)
-    part = Image.new('RGBA', SRC.size, (0, 0, 0, 0))
-    part.paste(SRC, (0, 0), mask)
-    return part, mask
-
-
-def keep_largest_component(image):
-    """Remove tiny detached pixels left where two hand-drawn parts overlapped."""
-    from collections import deque
+    # Keep the character and details inside its silhouette; discard neighbouring cells.
     alpha = image.getchannel('A')
-    px = alpha.load()
     seen = set()
     components = []
-    for y in range(image.height):
-        for x in range(image.width):
-            if px[x, y] < 8 or (x, y) in seen:
+    for y in range(h):
+        for x in range(w):
+            if (x, y) in seen or alpha.getpixel((x, y)) < 12:
                 continue
             component = []
             queue = deque([(x, y)])
@@ -45,108 +63,54 @@ def keep_largest_component(image):
                 cx, cy = queue.popleft()
                 component.append((cx, cy))
                 for nx, ny in ((cx-1,cy),(cx+1,cy),(cx,cy-1),(cx,cy+1)):
-                    if 0 <= nx < image.width and 0 <= ny < image.height and (nx, ny) not in seen and px[nx, ny] >= 8:
+                    if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in seen and alpha.getpixel((nx, ny)) >= 12:
                         seen.add((nx, ny))
                         queue.append((nx, ny))
             components.append(component)
-    if not components:
-        return image
-    largest = max(components, key=len)
-    cleaned = Image.new('RGBA', image.size, (0, 0, 0, 0))
-    mask = Image.new('L', image.size, 0)
-    draw = ImageDraw.Draw(mask)
-    for x, y in largest:
-        mask.putpixel((x, y), 255)
-    cleaned.paste(image, (0, 0), ImageChops.multiply(image.getchannel('A'), mask))
-    return cleaned
+    if components and clean:
+        main = max(components, key=len)
+        xs = [p[0] for p in main]
+        ys = [p[1] for p in main]
+        main_box = (min(xs)-8, min(ys)-8, max(xs)+8, max(ys)+8)
+        for component in components:
+            xs = [p[0] for p in component]
+            ys = [p[1] for p in component]
+            inside = max(xs) >= main_box[0] and min(xs) <= main_box[2] and max(ys) >= main_box[1] and min(ys) <= main_box[3]
+            if component is not main and (not inside or len(component) < 4):
+                for cx, cy in component:
+                    px[cx, cy] = (0, 0, 0, 0)
+    bbox = image.getchannel('A').point(lambda value: 255 if value > 12 else 0).getbbox()
+    return image.crop(bbox) if bbox else image
 
 
-# Independent firing arm (elbow pivot: 153,145).
-ARM_POINTS = [(153,134),(168,139),(178,132),(184,122),(182,113),(191,106),(201,107),
-              (208,102),(220,107),(225,113),(231,113),(231,142),(221,145),(220,156),
-              (214,166),(205,169),(198,164),(190,168),(183,165),(179,176),(167,185),
-              (151,182),(140,175),(138,162),(144,147)]
-arm, arm_mask = extract(ARM_POINTS)
-body = SRC.copy()
-body.putalpha(ImageChops.subtract(body.getchannel('A'), arm_mask))
-body = keep_largest_component(body)
-body.save(ASSETS / 'jim-body.png', optimize=True)
-arm.save(ASSETS / 'jim-arm.png', optimize=True)
-
-# Separate legs at the hips. They are drawn behind the torso for real alternating steps.
-BACK_POINTS = [(37,193),(61,187),(82,192),(96,207),(96,224),(87,241),(84,254),
-               (91,271),(89,289),(77,298),(43,298),(27,287),(29,270),(37,253),
-               (35,232),(31,211)]
-FRONT_POINTS = [(91,193),(112,181),(136,184),(150,199),(153,215),(145,232),(144,247),
-                (158,260),(174,276),(168,291),(151,298),(113,296),(99,287),(101,267),
-                (104,246),(94,228),(87,210)]
-back_leg, back_mask = extract(BACK_POINTS)
-front_leg, front_mask = extract(FRONT_POINTS)
-leg_mask = ImageChops.lighter(back_mask, front_mask)
-torso = body.copy()
-torso.putalpha(ImageChops.subtract(torso.getchannel('A'), leg_mask))
-torso = keep_largest_component(torso)
+def sequence(name, boxes):
+    for index, box in enumerate(boxes):
+        # The yellow electrocution outline consists of many intentionally disconnected lines.
+        frame = transparent_cell(box, clean=not (name == 'death' and index == 2))
+        frame.save(DEST / f'{name}-{index}.png', optimize=True)
+    print(f'{name}: {len(boxes)} frames')
 
 
-def place(canvas, image, offset=(0, 0)):
-    canvas.alpha_composite(image, (OX + offset[0], offset[1]))
+def cells(y_top, y_bottom, boundaries):
+    return [(left + 1, y_top + 1, right, y_bottom) for left, right in zip(boundaries, boundaries[1:])]
 
 
-def rotated(part, angle, pivot, lift=0):
-    # PIL positive angles are counter-clockwise. Translate for foot lift after rotation.
-    result = part.rotate(angle, resample=Image.Resampling.BICUBIC, center=pivot)
-    if lift:
-        shifted = Image.new('RGBA', SRC.size, (0, 0, 0, 0))
-        shifted.alpha_composite(result, (0, int(lift)))
-        return shifted
-    return result
+# Full original running cycle (16 drawings).
+sequence('run', cells(1130, 1195, [0,42,76,116,169,217,264,314,355,388,429,482,534,585,632,674,716,756]))
 
+# Gun raise / firing / recoil drawings.
+sequence('shoot', cells(55, 140, [0,49,107,165,222]))
 
-def frame(back_angle=0, front_angle=0, back_lift=0, front_lift=0, bob=0,
-          torso_angle=0, arm_angle=None, squash=1.0):
-    out = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    place(out, rotated(back_leg, back_angle, (70, 204), back_lift))
-    place(out, rotated(front_leg, front_angle, (116, 201), front_lift))
-    body_part = torso
-    if squash != 1.0:
-        resized = torso.resize((torso.width, round(torso.height * squash)), Image.Resampling.LANCZOS)
-        body_part = Image.new('RGBA', SRC.size, (0, 0, 0, 0))
-        body_part.alpha_composite(resized, (0, torso.height - resized.height))
-    if torso_angle:
-        body_part = body_part.rotate(torso_angle, resample=Image.Resampling.BICUBIC, center=(105, 182))
-    place(out, body_part, (0, bob))
-    if arm_angle is not None:
-        place(out, rotated(arm, arm_angle, (153, 145)), (0, bob))
-    return out
+# Takeoff, airborne split, falling and landing.
+for name, box in [
+    ('jump-rise', (60, 820, 97, 900)),
+    ('jump-top', (348, 811, 400, 895)),
+    ('jump-fall', (401, 811, 449, 895)),
+    ('land', (544, 851, 600, 915)),
+]:
+    transparent_cell(box).save(DEST / f'{name}.png', optimize=True)
+    print(f'{name}: 1 frame')
 
-
-# Eight genuinely different running poses: opposite leg swings, lifts and body bounce.
-for i in range(8):
-    a = 2 * pi * i / 8
-    img = frame(back_angle=sin(a) * 43, front_angle=-sin(a) * 43,
-                back_lift=-max(0, sin(a)) * 13, front_lift=-max(0, -sin(a)) * 13,
-                bob=-round(abs(cos(a)) * 6), torso_angle=sin(a) * 3)
-    img.save(ASSETS / f'run-{i}.png', optimize=True)
-
-# Takeoff, tucked apex, falling and a deep landing pose.
-frame(-32, 38, -12, -16, bob=-4, torso_angle=-4).save(ASSETS / 'jump-rise.png', optimize=True)
-frame(-58, 61, -27, -25, bob=-9, torso_angle=4, squash=.98).save(ASSETS / 'jump-top.png', optimize=True)
-frame(18, -24, -3, -9, bob=0, torso_angle=5).save(ASSETS / 'jump-fall.png', optimize=True)
-frame(-15, 18, 0, 0, bob=2, squash=.89).save(ASSETS / 'land.png', optimize=True)
-
-# Braced shooting stance and a stronger recoil pose.
-frame(-22, 25, 0, 0, bob=0, torso_angle=-3).save(ASSETS / 'shoot-0.png', optimize=True)
-frame(-29, 31, 0, 0, bob=2, torso_angle=-8, squash=.98).save(ASSETS / 'shoot-1.png', optimize=True)
-
-# Four loose-limbed death poses. The arm is baked in because aiming stops on death.
-for i, angles in enumerate([(-55, 62, -75), (55, -62, 65), (-70, 45, 95), (65, -48, -95)]):
-    b, f, a = angles
-    frame(b, f, -8, -8, torso_angle=(-1) ** i * 9, arm_angle=a).save(ASSETS / f'death-{i}.png', optimize=True)
-
-# Contact sheet is only a development preview, not a game asset.
-sheet = Image.new('RGBA', (150 * 8, 190), (20, 17, 38, 255))
-for i in range(8):
-    img = Image.open(ASSETS / f'run-{i}.png').resize((150, 150), Image.Resampling.LANCZOS)
-    sheet.alpha_composite(img, (i * 150, 25))
-sheet.save(ROOT / 'art' / 'run-preview.png', optimize=True)
-print('Built 8 run, 4 jump/land, 2 shoot and 4 death frames in game/assets/')
+# Original electrocution sequence: normal, black silhouette, white flash and outline.
+sequence('death', cells(5520, 5615, [108,187,267,349,409]))
+print('External SNES animation frames written to game/assets/')
