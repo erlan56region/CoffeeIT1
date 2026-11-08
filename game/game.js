@@ -128,6 +128,10 @@ cvs.addEventListener('pointermove', e => {
 cvs.addEventListener('pointerdown', e => {
   initAudio(); pressed.start = true;
   setMouseAim(e);
+  if (state === 'title') {
+    const chosen = titleStageAt(mouseAim.x, mouseAim.y);
+    if (chosen >= 0) { selectedStage = chosen; startGame(chosen); SFX.groovy(); }
+  }
   // На сенсорном экране можно также удерживать палец на игровом поле и вести прицел.
   if (state === 'play' && (e.button === 0 || e.pointerType === 'touch')) { mouseShooting = true; pressed.shoot = true; }
 });
@@ -277,7 +281,7 @@ function buildLegacyLevel() {
 let state = 'loading';          // loading | title | play | pause | dead | gameover | win
 let level, player, bullets, eggs, particles, floaters, boss, princess, race;
 let camX = 0, shake = 0, score = 0, lives = 3, checkpoint = 120, timer = 0, stateT = 0, gameTime = 0;
-let stageIndex = 0, muted = false;
+let stageIndex = 0, selectedStage = 0, muted = false;
 let unlockedWeapons = [true, false, false];
 
 const stars = Array.from({ length: 220 }, () => ({ x: Math.random() * 2600, y: Math.random() * H, s: Math.random() * 2 + 0.5, p: Math.random() * 6 }));
@@ -290,9 +294,9 @@ function newPlayer(x) {
     deathT: 0, glide: false, stand: null };
 }
 
-function startGame() {
+function startGame(index = selectedStage) {
   score = 0; lives = 3; gameTime = 0; unlockedWeapons = [true, false, false];
-  loadStage(0);
+  loadStage(index);
 }
 
 function loadStage(index) {
@@ -305,7 +309,7 @@ function loadStage(index) {
   checkpoint = 120; camX = 0; stateT = 0;
   race = level.cfg.race ? createRace() : null;
   state = 'play';
-  floatText(400, 180, `${index + 1}/10 · ${level.cfg.short}`, level.cfg.color, 42);
+  floatText(400, 180, `${index + 1}/${Campaign.STAGES.length} · ${level.cfg.short}`, level.cfg.color, 42);
 }
 
 function respawn() {
@@ -363,6 +367,8 @@ function update(dt) {
 
   if (state === 'title' || state === 'win') {
     stateT += dt;
+    if (state === 'title' && pressed.left) selectedStage = (selectedStage + Campaign.STAGES.length - 1) % Campaign.STAGES.length;
+    if (state === 'title' && pressed.right) selectedStage = (selectedStage + 1) % Campaign.STAGES.length;
     if ((pressed.start || pressed.jump) && stateT > 0.6) { startGame(); SFX.groovy(); }
     if (state !== 'title') updateWorld(dt, true);
     return;
@@ -376,7 +382,7 @@ function update(dt) {
   if (state === 'stageclear') {
     stateT += dt;
     if ((pressed.start || pressed.jump || stateT > 4) && stateT > 0.6) {
-      loadStage(Math.min(9, stageIndex + 1)); SFX.groovy();
+      loadStage(Math.min(Campaign.STAGES.length - 1, stageIndex + 1)); SFX.groovy();
     }
     return;
   }
@@ -662,7 +668,7 @@ function updateFriendsAndPuzzles(dt) {
       SFX.heart(); floatText(f.x,f.y-70,friend.message,friend.color,24);
     }
   }
-  if (stageIndex < 9 && pcx>level.exitX) {
+  if (!level.cfg.boss && pcx>level.exitX) {
     if (puzzleSolved()) completeStage();
     else if (!level.lockMsgT || level.lockMsgT<=0) {
       floatText(level.exitX,GROUND_Y-210,'ШЛЮЗ ЗАКРЫТ · РЕШИ ГОЛОВОЛОМКУ','#ff9fc6',25); level.lockMsgT=2;
@@ -761,7 +767,7 @@ function updateWorld(dt, passive) {
   }
 
   // Босс
-  if (stageIndex === 9 && !boss.active && pcx > 7950) {
+  if (level.cfg.boss && !boss.active && pcx > 7950) {
     boss.active = true; SFX.boss();
     floatText(pcx, 200, 'ПСИ-ВОРОНА!', '#ff4a4a', 60);
     shake = 10;
@@ -805,7 +811,7 @@ function updateWorld(dt, passive) {
   if (!passive) updateFriendsAndPuzzles(dt);
 
   // Принцесса
-  if (stageIndex === 9 && !passive && boss.dead && !princess.saved && Math.abs(princess.x - pcx) < 90) {
+  if (level.cfg.boss && !passive && boss.dead && !princess.saved && Math.abs(princess.x - pcx) < 90) {
     princess.saved = true;
     score += 2000 + lives * 1000;
     SFX.win();
@@ -970,6 +976,16 @@ function drawThemeScenery(theme) {
       if(theme==='ice'){ctx.beginPath();ctx.moveTo(x+40,H-100);ctx.lineTo(x+75,H-100-h);ctx.lineTo(x+105,H-100);ctx.fill();ctx.stroke();}}
   }else if(theme==='garden'){
     for(let i=-1;i<10;i++){const x=shift*1.4+i*210;ctx.beginPath();ctx.moveTo(x,H-90);ctx.quadraticCurveTo(x+30,H-250,x+60,H-130);ctx.stroke();ctx.fillStyle=cfg.color;ctx.globalAlpha=.2;ctx.beginPath();ctx.arc(x+60,H-160,35,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
+  }else if(theme==='sewer'){
+    ctx.lineWidth=20;for(let i=-1;i<7;i++){const x=shift+i*300;ctx.beginPath();ctx.moveTo(x,80);ctx.lineTo(x,330);ctx.quadraticCurveTo(x,390,x+70,390);ctx.lineTo(x+180,390);ctx.stroke();ctx.fillStyle='rgba(110,255,40,.18)';ctx.beginPath();ctx.arc(x+90,H-110,35+(i%3)*15,0,Math.PI*2);ctx.fill();}ctx.lineWidth=3;
+  }else if(theme==='volcano'){
+    for(let i=-1;i<10;i++){const x=shift*1.3+i*210,h=120+(i%4)*55;ctx.beginPath();ctx.moveTo(x,H-90);ctx.lineTo(x+75,H-90-h);ctx.lineTo(x+150,H-90);ctx.fill();ctx.stroke();ctx.fillStyle='#ff5a28';ctx.globalAlpha=.25;ctx.beginPath();ctx.arc(x+75,H-95-h,18,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle='rgba(5,5,18,.55)';}
+  }else if(theme==='clockwork'){
+    for(let i=-1;i<8;i++){const x=shift+i*250,y=180+(i%3)*120,r=55+(i%2)*20;ctx.beginPath();for(let k=0;k<16;k++){const a=k*Math.PI/8,rr=k%2?r:r+15;ctx.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(x,y,r*.35,0,Math.PI*2);ctx.stroke();}
+  }else if(theme==='graveyard'){
+    for(let i=-1;i<12;i++){const x=shift*1.5+i*160,y=H-110;ctx.beginPath();ctx.roundRect(x,y-90-(i%3)*20,65,100+(i%3)*20,20);ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(x+32,y-75);ctx.lineTo(x+32,y-35);ctx.moveTo(x+15,y-58);ctx.lineTo(x+50,y-58);ctx.stroke();}
+  }else if(theme==='void'){
+    for(let i=-1;i<7;i++){const x=shift+i*310,y=160+(i%3)*130;ctx.strokeStyle=i%2?cfg.color:'#7ff6ff';ctx.lineWidth=9;ctx.beginPath();ctx.ellipse(x,y,55,90,gameTime*.1,0,Math.PI*2);ctx.stroke();ctx.lineWidth=3;}
   }else if(theme==='factory'){
     for(let i=-1;i<6;i++){const x=shift+i*330;ctx.lineWidth=18;ctx.beginPath();ctx.moveTo(x,H-100);ctx.lineTo(x,H-260);ctx.lineTo(x+170,H-260);ctx.lineTo(x+170,H-180);ctx.stroke();ctx.lineWidth=3;}
   }else if(theme==='armada'){
@@ -1278,7 +1294,7 @@ function drawHUD() {
     if(IMG['jim-face']&&IMG['jim-face'].width)ctx.drawImage(IMG['jim-face'],x-15,61,30,26);
   }
   ctx.restore();
-  outlinedText(`ЭТАП ${stageIndex+1}/10 · ${level.cfg.short}`,W/2,29,25,level.cfg.color);
+  outlinedText(`ЭТАП ${stageIndex+1}/${Campaign.STAGES.length} · ${level.cfg.short}`,W/2,29,25,level.cfg.color);
   outlinedText('ОЧКИ '+score.toString().padStart(6,'0'),W-24,35,31,'#fff','right');
   const prog=clamp(p.x/level.exitX,0,1);ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillRect(W-284,68,260,8);ctx.fillStyle=level.cfg.color;ctx.fillRect(W-284,68,260*prog,8);
   ctx.fillStyle='rgba(5,5,20,.72)';ctx.beginPath();ctx.roundRect(16,H-56,780,40,8);ctx.fill();
@@ -1330,7 +1346,7 @@ function drawPuzzleObjects() {
     }ctx.restore();
     if(Math.abs(player.x-f.x)<400)outlinedText(data.name,x,f.y-115+bob,18,data.color);
   }
-  if(stageIndex<9){
+  if(!level.cfg.boss){
     const x=level.exitX-camX;ctx.save();ctx.translate(x,GROUND_Y-120);ctx.strokeStyle=puzzleSolved()?'#b6ff4a':'#ff655f';ctx.lineWidth=7;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=20;
     ctx.beginPath();ctx.arc(0,0,52+Math.sin(gameTime*4)*5,0,Math.PI*2);ctx.stroke();outlinedText(puzzleSolved()?'ВЫХОД':'ЗАКРЫТО',0,-85,22,ctx.strokeStyle);ctx.restore();
   }
@@ -1355,7 +1371,7 @@ function drawWorld() {
     }else drawHeart(x,it.y,it.t);
   }
   level.cows.forEach(drawCow);
-  if (stageIndex === 9 && state !== 'win') drawPrincess();
+  if (level.cfg.boss && state !== 'win') drawPrincess();
   level.crows.forEach(c => !c.dead && drawCrow(c));
   drawBoss();
   // Яйца
@@ -1428,6 +1444,15 @@ function drawTitleLogo(y) {
   ctx.restore();
 }
 
+function titleStageAt(x,y) {
+  const startX=95,startY=438,cw=210,ch=30,gapX=10,gapY=38;
+  for(let i=0;i<Campaign.STAGES.length;i++){
+    const col=i%5,row=Math.floor(i/5),rx=startX+col*(cw+gapX),ry=startY+row*gapY;
+    if(x>=rx&&x<=rx+cw&&y>=ry&&y<=ry+ch)return i;
+  }
+  return -1;
+}
+
 function drawTitle() {
   camX = (gameTime * 40) % 3000;
   drawBackground();
@@ -1449,12 +1474,20 @@ function drawTitle() {
     ctx.drawImage(IMG.cow, -50, -40, 100, 82); ctx.restore();
   }
   drawTitleLogo(250);
-  outlinedText('10 ЛОКАЦИЙ · 32 ГЕРОЯ И ВРАГА · КОСМИЧЕСКАЯ ГОНКА', W / 2, 420, 30, '#ff9fd0');
-  if (Math.floor(gameTime * 2) % 2 === 0) outlinedText('НАЖМИ ENTER ИЛИ КОСНИСЬ ЭКРАНА', W / 2, 500, 40, '#ffe14a');
-  ctx.fillStyle = 'rgba(5,0,20,0.7)'; ctx.beginPath(); ctx.roundRect(W / 2 - 520, 546, 1040, 74, 14); ctx.fill();
-  ctx.font = '700 20px Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#e8e0ff';
-  ctx.fillText('← → / A D — бег   •   ↑ / W / ПРОБЕЛ — прыжок (держи в падении — голова-вертолёт)', W / 2, 568);
-  ctx.fillText('ЛКМ / X / J — огонь   •   Q / E / 1–3 — оружие   •   S / ↓ — присесть / вниз   •   Z / K — хлыст   •   P — пауза', W / 2, 598);
+  outlinedText('15 ЛОКАЦИЙ · 32 ГЕРОЯ И ВРАГА · КОСМИЧЕСКАЯ ГОНКА', W / 2, 412, 28, '#ff9fd0');
+  ctx.fillStyle='rgba(5,0,20,.76)';ctx.beginPath();ctx.roundRect(82,430,1116,122,14);ctx.fill();
+  Campaign.STAGES.forEach((stage,i)=>{
+    const col=i%5,row=Math.floor(i/5),x=95+col*220,y=438+row*38,selected=i===selectedStage;
+    ctx.fillStyle=selected?stage.color:'rgba(55,42,85,.92)';ctx.strokeStyle=selected?'#fff':'#766799';ctx.lineWidth=2;
+    ctx.beginPath();ctx.roundRect(x,y,210,30,6);ctx.fill();ctx.stroke();
+    ctx.font='700 13px Rubik';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=selected?'#111':'#fff';
+    ctx.fillText(`${i+1}. ${stage.short}`,x+105,y+15,194);
+  });
+  outlinedText('← → — ВЫБОР УРОВНЯ · ENTER — ИГРАТЬ · МОЖНО НАЖАТЬ НА КАРТОЧКУ',W/2,566,24,'#ffe14a');
+  ctx.fillStyle = 'rgba(5,0,20,0.75)'; ctx.beginPath(); ctx.roundRect(W / 2 - 570, 590, 1140, 78, 14); ctx.fill();
+  ctx.font = '700 18px Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#e8e0ff';
+  ctx.fillText('← → / A D — бег   •   ↑ / W / ПРОБЕЛ — прыжок и голова-вертолёт   •   S / ↓ — присесть', W / 2, 614);
+  ctx.fillText('ЛКМ / X / J — огонь   •   Q / E / 1–3 — оружие   •   Z / K — хлыст   •   P — пауза', W / 2, 645);
 }
 
 function drawOverlay(title, sub, color) {
@@ -1474,7 +1507,7 @@ function render() {
   drawWorld();
   drawHUD();
   if (state === 'pause') drawOverlay('ПАУЗА', 'Нажми P, чтобы продолжить', '#ffe14a');
-  if (state === 'stageclear') drawOverlay('ЭТАП ПРОЙДЕН!', `Далее: ${Campaign.STAGES[Math.min(9,stageIndex+1)].short} · ENTER`, '#b6ff4a');
+  if (state === 'stageclear') drawOverlay('ЭТАП ПРОЙДЕН!', `Далее: ${Campaign.STAGES[Math.min(Campaign.STAGES.length-1,stageIndex+1)].short} · ENTER`, '#b6ff4a');
   // Сначала показываем саму анимацию смерти, затем затемняем сцену.
   if (state === 'dead' && stateT > 0.55) drawOverlay('ОЙ-ОЙ!', 'Осталось жизней: ' + lives, '#ff9fc6');
   if (state === 'gameover') {

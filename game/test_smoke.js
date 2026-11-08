@@ -49,8 +49,8 @@ const pointer=(type,x,y,pointerType='mouse')=>(canvasListeners[type]||[]).forEac
  for(let i=0;i<30;i++){frame.now+=16.67;frame();}
  listeners.pointerup.forEach(f=>f({}));
  for(let i=0;i<30;i++){frame.now+=16.67;frame();}
- for(let stage=0;stage<10;stage++){sandbox.__test.loadStage(stage);for(let i=0;i<35;i++){frame.now+=16.67;frame();}const info=sandbox.__test.get();if(info.stageIndex!==stage)throw Error('Stage failed '+stage);if(info.level.crows.some(c=>c.typeId===undefined))throw Error('Untyped enemy '+stage);}
+ for(let stage=0;stage<15;stage++){sandbox.__test.loadStage(stage);for(let i=0;i<35;i++){frame.now+=16.67;frame();}const info=sandbox.__test.get();if(info.stageIndex!==stage)throw Error('Stage failed '+stage);if(info.level.crows.some(c=>c.typeId===undefined))throw Error('Untyped enemy '+stage);}
 for(let i=0;i<1400;i++){frame.now+=16.67;frame();}
 if(errors)throw Error(`Game logged ${errors} runtime errors`);
- console.log('Campaign smoke test OK: 10 stages, race, directional fire, SNES assets and rendered frames');
+ console.log('Campaign smoke test OK: 15 stages, race, directional fire, SNES assets and rendered frames');
 })().catch(e=>{console.error(e);process.exitCode=1});

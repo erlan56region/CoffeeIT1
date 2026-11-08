@@ -1,4 +1,4 @@
-/* Campaign content: 10 locations, 24 enemies, 8 friends and 3 weapons. */
+/* Campaign content: 15 locations, 24 enemies, 8 friends and 3 weapons. */
 (() => {
 'use strict';
 const GROUND_Y = 600, H = 720;
@@ -44,7 +44,12 @@ const STAGES = [
   {name:'ПЛАЗМЕННАЯ ФАБРИКА',short:'ФАБРИКА',theme:'factory',color:'#ff655f',worldW:8000,puzzle:'sequence',required:4,enemies:[10,11,12,16],friends:[0],objective:'Перезапусти реактор: терминалы 1 → 2 → 3 → 4.'},
   {name:'АРМАДА ПСИ-ВОРОНОВ',short:'АРМАДА',theme:'armada',color:'#ff9fc6',worldW:8300,puzzle:'switches',required:5,enemies:[13,14,20,22],friends:[7],objective:'Отключи 5 маяков наводки на разных высотах.'},
   {name:'ЛАБИРИНТ РАЗУМА',short:'ЛАБИРИНТ',theme:'maze',color:'#b49cff',worldW:8600,puzzle:'sequence',required:4,keys:3,enemies:[15,17,18,19],friends:[2,5],objective:'Собери 3 фрагмента и реши последовательность 2 → 4 → 1 → 3.'},
-  {name:'ПСИ-ЦИТАДЕЛЬ',short:'ЦИТАДЕЛЬ',theme:'citadel',color:'#ff4a4a',worldW:9300,puzzle:'boss',required:0,enemies:[20,21,22,23],friends:[7],objective:'Пробейся к Пси-Вороне и спаси принцессу.'}
+  {name:'ТОКСИЧНАЯ КАНАЛИЗАЦИЯ',short:'КАНАЛИЗАЦИЯ',theme:'sewer',color:'#9cff38',worldW:8800,puzzle:'switches',required:5,keys:2,enemies:[4,11,16,19],friends:[1],objective:'Осуши токсичные резервуары: 2 ключа и 5 клапанов.'},
+  {name:'ЛАВОВЫЙ РЕАКТОР',short:'ЛАВОВЫЙ РЕАКТОР',theme:'volcano',color:'#ff5a28',worldW:9100,puzzle:'keys',required:4,enemies:[10,12,17,23],friends:[4],objective:'Найди 4 охлаждающих ядра среди движущихся платформ.'},
+  {name:'ЧАСОВОЙ МЕХАНИЗМ',short:'ЧАСОВОЙ МЕХАНИЗМ',theme:'clockwork',color:'#ffd27a',worldW:9400,puzzle:'sequence',required:6,keys:1,sequence:[2,6,1,5,3,4],enemies:[9,11,14,18,21],friends:[0],objective:'Заведи механизм: 2 → 6 → 1 → 5 → 3 → 4 и возьми ключ.'},
+  {name:'ОРБИТАЛЬНОЕ КЛАДБИЩЕ',short:'ОРБИТАЛЬНОЕ КЛАДБИЩЕ',theme:'graveyard',color:'#a7b3c9',worldW:9700,puzzle:'switches',required:6,keys:3,enemies:[2,6,15,19,20],friends:[2,7],objective:'Найди 3 сигнальных ключа и подай 6 сигналов SOS.'},
+  {name:'НУЛЕВОЕ ПРОСТРАНСТВО',short:'НУЛЕВОЕ ПРОСТРАНСТВО',theme:'void',color:'#df70ff',worldW:10000,puzzle:'sequence',required:5,keys:4,sequence:[3,1,5,2,4],enemies:[15,16,18,19,23],friends:[5],objective:'4 фрагмента и порталы: 3 → 1 → 5 → 2 → 4. Хлыст — Z.'},
+  {name:'ПСИ-ЦИТАДЕЛЬ',short:'ЦИТАДЕЛЬ',theme:'citadel',color:'#ff4a4a',worldW:10500,puzzle:'boss',required:0,enemies:[20,21,22,23],friends:[7],objective:'Пробейся к Пси-Вороне и спаси принцессу.'}
 ];
 
 function rng(seed){let s=seed>>>0;return()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
@@ -73,8 +78,8 @@ function build(stageIndex){
   }
   const doorX=cfg.worldW-520;
   const switchCount=cfg.puzzle==='switches'||cfg.puzzle==='sequence'?cfg.required:0;
-  const sequence=stageIndex===8?[2,4,1,3]:Array.from({length:switchCount},(_,i)=>i+1);
-  if(cfg.puzzle==='sequence') signs.push({x:1100,text:'ЛАБИРИНТ: бей терминалы хлыстом (Z) в порядке 2 → 4 → 1 → 3'});
+  const sequence=cfg.sequence||(stageIndex===8?[2,4,1,3]:Array.from({length:switchCount},(_,i)=>i+1));
+  if(cfg.puzzle==='sequence') signs.push({x:1100,text:`ГОЛОВОЛОМКА: бей терминалы хлыстом (Z): ${sequence.join(' → ')}`});
   for(let i=0;i<switchCount;i++){
     const x=1450+i*(Math.max(900,(doorX-1900)/Math.max(1,switchCount-1)));
     switches.push({x,y:GROUND_Y-72,order:sequence[i],active:false,lockedFlash:0});
@@ -92,7 +97,7 @@ function build(stageIndex){
   cfg.friends.forEach((id,i)=>friends.push({id,x:850+i*2800,y:GROUND_Y-85,t:r()*6,met:false}));
   [2100,4200,cfg.worldW-1100].forEach(x=>signs.push({x,active:false}));
   [[1250,230],[cfg.worldW-1600,180]].forEach(([x,y])=>cows.push({x,y,w:100,h:82,t:r()*6,launched:false,vy:0,rot:0}));
-  return {cfg,plats,crows,items,cows,signs,switches,friends,doors:[{x:doorX,y:GROUND_Y-240,w:45,h:240}],exitX:cfg.worldW-170,keyCount,keysFound:0,sequenceOrder:stageIndex===8?[2,4,1,3]:Array.from({length:switchCount},(_,i)=>i+1),sequencePos:0};
+  return {cfg,plats,crows,items,cows,signs,switches,friends,doors:[{x:doorX,y:GROUND_Y-240,w:45,h:240}],exitX:cfg.worldW-170,keyCount,keysFound:0,sequenceOrder:sequence,sequencePos:0};
 }
 window.Campaign={ENEMIES,FRIENDS,WEAPONS,STAGES,build};
 })();
