@@ -12,6 +12,8 @@ body.is-touch #touch { display: block; }
 .pad { position: absolute; bottom: 18px; display: flex; gap: 14px; pointer-events: auto; }
 .pad.left { left: 18px; }
 .pad.right { right: 18px; align-items: flex-end; }
+.pad.top { top: 14px; right: 18px; bottom: auto; }
+.pad.top button, .pad.top button.small { width: 54px; height: 54px; font-size: 18px; }
 .pad button {
   width: 78px; height: 78px; border-radius: 50%; border: 4px solid #111;
   background: rgba(255,255,255,0.78); color: #c0262d; font: 900 30px Rubik, sans-serif;

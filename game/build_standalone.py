@@ -1,24 +1,38 @@
-"""Собирает игру в ОДИН html-файл (все картинки и шрифты внутри) — его можно просто открыть двойным щелчком."""
-import base64, os, re
+"""Собирает игру в ОДИН html-файл (все картинки, шрифты и скрипты внутри) — его можно просто открыть двойным щелчком."""
+import base64, json, os, re
 D = os.path.dirname(os.path.abspath(__file__))
+
 def b64(path, mime):
     return f"data:{mime};base64," + base64.b64encode(open(os.path.join(D, path), 'rb').read()).decode()
-html = open(os.path.join(D, 'index.html'), encoding='utf-8').read()
-css = open(os.path.join(D, 'style.css'), encoding='utf-8').read()
-js = open(os.path.join(D, 'game.js'), encoding='utf-8').read()
-css = re.sub(r"url\('(fonts/[^']+)'\)", lambda m: f"url('{b64(m.group(1), 'font/woff2')}')", css)
-files = ['jim.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg'] + sorted('rig/' + f for f in os.listdir(os.path.join(D, 'assets', 'rig')) if f.endswith('.png'))
-assets = {f: b64('assets/' + f, 'image/jpeg' if f.endswith('.jpg') else 'image/png') for f in files}
-rig_js = open(os.path.join(D, 'assets', 'rig', 'rig.js'), encoding='utf-8').read()
-js = js.replace("i.src = 'assets/' + f;", "i.src = (window.__ASSETS && window.__ASSETS[f]) || ('assets/' + f);")
-assert '__ASSETS' in js
+
+def read(path):
+    return open(os.path.join(D, path), encoding='utf-8').read()
+
+html = read('index.html')
+css = re.sub(r"url\('(fonts/[^']+)'\)", lambda m: f"url('{b64(m.group(1), 'font/woff2')}')", read('style.css'))
+
+# все картинки из assets/ (кроме исходника рига) — по относительному пути, как их запрашивает loadAssets()
+files = []
+for root, _, names in os.walk(os.path.join(D, 'assets')):
+    for n in names:
+        if n.endswith(('.png', '.jpg')) and n != 'icon.png':
+            files.append(os.path.relpath(os.path.join(root, n), os.path.join(D, 'assets')).replace(os.sep, '/'))
+assets = {f: b64('assets/' + f, 'image/jpeg' if f.endswith('.jpg') else 'image/png') for f in sorted(files)}
+
 html = html.replace('<link rel="stylesheet" href="style.css" />', f'<style>\n{css}\n</style>')
 html = html.replace('<link rel="icon" href="assets/icon.png" />', f'<link rel="icon" href="{b64("assets/icon.png", "image/png")}" />')
-import json
-html = html.replace('<script src="assets/rig/rig.js"></script>', f'<script>\n{rig_js}\n</script>')
-assert 'window.RIG' in html
-html = html.replace('<script src="game.js"></script>', f'<script>window.__ASSETS = {json.dumps(assets)};</script>\n<script>\n{js}\n</script>')
-# jim-game.html — для скачивания; index.html в корне — для GitHub Pages (https://<user>.github.io/<repo>/)
+
+scripts = re.findall(r'<script src="([^"]+)"></script>', html)
+assert 'js/core.js' in scripts and 'js/main.js' in scripts, scripts
+for i, src in enumerate(scripts):
+    code = read(src)
+    if src == 'js/core.js':
+        assert '__ASSETS' in code
+        code = f'window.__ASSETS = {json.dumps(assets)};\n' + code
+    html = html.replace(f'<script src="{src}"></script>', f'<script>\n/* {src} */\n{code}\n</script>')
+assert '<script src=' not in html
+
+# jim-game.html — для скачивания; index.html в корне — для GitHub Pages
 for name in ('jim-game.html', 'index.html'):
     out = os.path.join(D, '..', name)
     open(out, 'w', encoding='utf-8').write(html)
