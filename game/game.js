@@ -29,7 +29,7 @@ const JIM_H = 160, JIM_SCALE = JIM_H / 300;
 
 // ---------- Загрузка ассетов ----------
 const IMG = {};
-const assetList = ['jim.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg'];
+const assetList = ['jim.png', 'jim-body.png', 'jim-arm.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg'];
 function loadAssets() {
   return Promise.all(assetList.map(f => new Promise(res => {
     const i = new Image();
@@ -77,7 +77,7 @@ const SFX = {
 const keys = {}, pressed = {};
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
-  ArrowUp: 'jump', KeyW: 'jump', Space: 'jump',
+  ArrowUp: 'jump', KeyW: 'jump', Space: 'jump', ArrowDown: 'down', KeyS: 'down',
   KeyX: 'shoot', KeyJ: 'shoot', KeyZ: 'whip', KeyK: 'whip',
   Enter: 'start', KeyP: 'pause', Escape: 'pause', KeyM: 'mute',
 };
@@ -102,7 +102,28 @@ document.querySelectorAll('#touch button').forEach(b => {
   b.addEventListener('pointercancel', up);
   b.addEventListener('pointerleave', up);
 });
-cvs.addEventListener('pointerdown', () => { initAudio(); pressed.start = true; });
+// Мышь: свободное прицеливание на 360° и стрельба левой кнопкой.
+const mouseAim = { x: W * 0.7, y: H * 0.5, active: false };
+let mouseShooting = false;
+function setMouseAim(e) {
+  const r = cvs.getBoundingClientRect();
+  mouseAim.x = (e.clientX - r.left) * W / r.width;
+  mouseAim.y = (e.clientY - r.top) * H / r.height;
+  mouseAim.active = true;
+}
+cvs.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse' || e.pointerType === 'pen' || (e.pointerType === 'touch' && mouseShooting)) setMouseAim(e);
+});
+cvs.addEventListener('pointerdown', e => {
+  initAudio(); pressed.start = true;
+  setMouseAim(e);
+  // На сенсорном экране можно также удерживать палец на игровом поле и вести прицел.
+  if (state === 'play' && (e.button === 0 || e.pointerType === 'touch')) { mouseShooting = true; pressed.shoot = true; }
+});
+addEventListener('pointerup', () => { mouseShooting = false; });
+cvs.addEventListener('pointercancel', () => { mouseShooting = false; });
+cvs.addEventListener('pointerleave', () => { mouseShooting = false; });
+cvs.addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- Утилиты ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -245,7 +266,8 @@ const farRocks = Array.from({ length: 26 }, (_, i) => ({ x: i * 420 + rand(0, 20
 
 function newPlayer(x) {
   return { x, y: GROUND_Y - 150, w: 54, h: 140, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, jumpBuf: 0,
-    inv: 0, shootCd: 0, whip: 0, whipCd: 0, whipHit: new Set(), health: 100, ammo: 120, squash: 0, walkT: 0, glide: false, stand: null };
+    inv: 0, shootCd: 0, shootAnim: 0, muzzleFlash: 0, recoil: 0, aimAngle: 0, whip: 0, whipCd: 0, whipHit: new Set(),
+    health: 100, ammo: 120, squash: 0, walkT: 0, stepT: 0, deathT: 0, glide: false, stand: null };
 }
 
 function startGame() {
@@ -290,8 +312,14 @@ function hurtPlayer(dmg, fromX) {
 function killPlayer() {
   if (state !== 'play') return;
   player.health = 0;
+  player.deathT = 0;
+  player.vy = -650;
+  player.vx = -player.face * 260;
+  player.glide = false;
+  player.shootAnim = 0;
   lives--;
   SFX.die();
+  burst(player.x + player.w / 2, player.y + 55, '#ff9fc6', 24, 380, 7);
   shake = 18;
   state = lives > 0 ? 'dead' : 'gameover';
   stateT = 0;
@@ -302,15 +330,22 @@ function update(dt) {
   gameTime += dt;
   if (pressed.mute) { muted = !muted; if (actx) muted ? actx.suspend() : actx.resume(); }
 
-  if (state === 'title' || state === 'gameover' || state === 'win') {
+  if (state === 'title' || state === 'win') {
     stateT += dt;
     if ((pressed.start || pressed.jump) && stateT > 0.6) { startGame(); SFX.groovy(); }
     if (state !== 'title') updateWorld(dt, true);
     return;
   }
+  if (state === 'gameover') {
+    stateT += dt;
+    if ((pressed.start || pressed.jump) && stateT > 0.6) { startGame(); SFX.groovy(); return; }
+    updateDeath(dt); updateWorld(dt, true);
+    return;
+  }
   if (state === 'pause') { if (pressed.pause || pressed.start) state = 'play'; return; }
   if (state === 'dead') {
     stateT += dt;
+    updateDeath(dt);
     updateWorld(dt, true);
     if (stateT > 1.6) respawn();
     return;
@@ -320,6 +355,15 @@ function update(dt) {
     updatePlayer(dt);
     updateWorld(dt, false);
   }
+}
+
+function updateDeath(dt) {
+  const p = player;
+  p.deathT += dt;
+  p.vy += 1000 * dt;
+  p.x = clamp(p.x + p.vx * dt, 0, WORLD_W - p.w);
+  p.y += p.vy * dt;
+  p.vx *= Math.pow(0.25, dt);
 }
 
 function updatePlatforms(dt) {
@@ -376,21 +420,43 @@ function updatePlayer(dt) {
   }
   if (p.onGround && !wasGround) { p.squash = 1; burst(p.x + p.w / 2, p.y + p.h, '#b6ff4a', 5, 120, 4); }
   p.squash = Math.max(0, p.squash - dt * 5);
-  if (p.onGround && Math.abs(p.vx) > 30) p.walkT += dt * Math.abs(p.vx) / 40; else p.walkT = 0;
+  const running = p.onGround && Math.abs(p.vx) > 30;
+  if (running) {
+    p.walkT += dt * Math.abs(p.vx) / 40;
+    p.stepT -= dt;
+    if (p.stepT <= 0) {
+      p.stepT = 0.13;
+      burst(p.x + p.w / 2 - p.face * 18, p.y + p.h - 3, '#b7a5d5', 3, 85, 4);
+    }
+  } else { p.walkT = 0; p.stepT = 0; }
 
   if (p.y > H + 150) { killPlayer(); return; }
 
-  // Выстрел плазмой
+  // Выстрел плазмой: мышь — любой угол, клавиши — 8 направлений.
   p.shootCd -= dt;
-  if ((pressed.shoot || keys.shoot) && p.shootCd <= 0) {
+  p.shootAnim = Math.max(0, p.shootAnim - dt);
+  p.muzzleFlash = Math.max(0, p.muzzleFlash - dt);
+  p.recoil = Math.max(0, p.recoil - dt * 8);
+  if ((keys.shoot || mouseShooting) && p.ammo > 0) {
+    p.aimAngle = getAimAngle(p);
+    if (Math.abs(Math.cos(p.aimAngle)) > 0.12) p.face = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+  }
+  if ((pressed.shoot || keys.shoot || mouseShooting) && p.shootCd <= 0) {
     if (p.ammo > 0) {
       p.ammo--;
       p.shootCd = 0.14;
-      const m = muzzle();
-      bullets.push({ x: m.x, y: m.y + rand(-3, 3), vx: p.face * 1150 + p.vx * 0.3, life: 0.9 });
+      p.aimAngle = getAimAngle(p);
+      if (Math.abs(Math.cos(p.aimAngle)) > 0.12) p.face = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+      p.shootAnim = 0.25; p.muzzleFlash = 0.09; p.recoil = 1;
+      const m = muzzle(p.aimAngle), cs = Math.cos(p.aimAngle), sn = Math.sin(p.aimAngle);
+      bullets.push({ x: m.x, y: m.y, vx: cs * 1150 + p.vx * 0.2, vy: sn * 1150 + p.vy * 0.08,
+        angle: p.aimAngle, life: 0.9 });
       SFX.shoot();
-      burst(m.x, m.y, '#7ff6ff', 3, 120, 3);
-    } else if (pressed.shoot) {
+      burst(m.x, m.y, '#7ff6ff', 5, 170, 4);
+      for (let i = 0; i < 3; i++) particles.push({ x: m.x, y: m.y,
+        vx: cs * rand(180, 360) + rand(-50, 50), vy: sn * rand(180, 360) + rand(-50, 50),
+        life: 0.18, max: 0.18, color: '#d9fdff', size: rand(2, 5) });
+    } else if (pressed.shoot || (mouseShooting && p.shootCd <= -0.25)) {
       floatText(p.x + p.w / 2, p.y - 10, 'НЕТ ПЛАЗМЫ!', '#ff6b6b', 26);
       p.shootCd = 0.4;
     }
@@ -421,9 +487,21 @@ function updatePlayer(dt) {
   }
 }
 
-function muzzle() {
+function getAimAngle(p) {
+  // При выстреле мышью направление к курсору всегда важнее клавиш бега.
+  if (mouseAim.active && (mouseShooting || !(keys.left || keys.right || keys.jump || keys.down))) {
+    return Math.atan2(mouseAim.y - (p.y + 57), mouseAim.x - (p.x + p.w / 2 - camX));
+  }
+  const ax = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const ay = (keys.jump ? -1 : 0) + (keys.down ? 1 : 0);
+  if (ax || ay) return Math.atan2(ay, ax);
+  if (mouseAim.active) return Math.atan2(mouseAim.y - (p.y + 57), mouseAim.x - (p.x + p.w / 2 - camX));
+  return p.face > 0 ? 0 : Math.PI;
+}
+function muzzle(angle) {
   const p = player, cx = p.x + p.w / 2;
-  return { x: cx + p.face * 66, y: p.y + p.h - JIM_H * 0.6 };
+  const sx = cx + p.face * 26, sy = p.y + 57;
+  return { x: sx + Math.cos(angle) * 46, y: sy + Math.sin(angle) * 46 };
 }
 const hitbox = c => ({ x: c.x - c.w / 2, y: c.y - c.h / 2, w: c.w, h: c.h });
 const bossBox = () => ({ x: boss.x - boss.w / 2 + 20, y: boss.y - boss.h / 2 + 10, w: boss.w - 40, h: boss.h - 20 });
@@ -462,8 +540,8 @@ function updateWorld(dt, passive) {
 
   // Пули
   for (const b of bullets) {
-    b.x += b.vx * dt; b.life -= dt;
-    for (const c of level.crows) if (!c.dead && overlap({ x: b.x - 10, y: b.y - 6, w: 20, h: 12 }, hitbox(c))) { damageCrow(c, 1, Math.sign(b.vx)); b.life = 0; break; }
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    for (const c of level.crows) if (!c.dead && overlap({ x: b.x - 10, y: b.y - 10, w: 20, h: 20 }, hitbox(c))) { damageCrow(c, 1, Math.sign(b.vx) || p.face); b.life = 0; break; }
     if (b.life > 0 && boss.active && !boss.dead && overlap({ x: b.x - 10, y: b.y - 6, w: 20, h: 12 }, bossBox())) { damageBoss(1); b.life = 0; }
   }
   bullets = bullets.filter(b => b.life > 0);
@@ -672,23 +750,101 @@ function drawHeart(x, y, t) {
 
 function drawJim() {
   const p = player, img = IMG.jim;
+  const bodyImg = IMG['jim-body'] && IMG['jim-body'].width ? IMG['jim-body'] : img;
+  const armImg = IMG['jim-arm'];
   if (!img || !img.width) return;
   if (p.inv > 0 && Math.floor(p.inv * 14) % 2 === 0 && state === 'play') return;
   const cx = p.x + p.w / 2 - camX, bottom = p.y + p.h;
   const sw = img.width * JIM_SCALE, sh = JIM_H;
+  const running = state === 'play' && p.onGround && Math.abs(p.vx) > 30;
+  const phase = p.walkT * 1.45;
   let sx = 1, sy = 1, rot = 0, bob = 0;
+
+  // Бег: пружинящий шаг, наклон вперёд и пыль из-под ног.
+  if (running) {
+    bob = Math.abs(Math.sin(phase)) * 8;
+    rot = Math.sin(phase) * 0.045 + clamp(p.vx / RUN, -1, 1) * 0.055;
+    sy = 1 + Math.sin(phase * 2) * 0.025;
+    sx = 1 - Math.sin(phase * 2) * 0.018;
+  }
   if (p.squash > 0) { sx = 1 + p.squash * 0.18; sy = 1 - p.squash * 0.15; }
-  if (!p.onGround) { sy *= p.vy < 0 ? 1.06 : 0.98; sx *= p.vy < 0 ? 0.95 : 1.02; rot = clamp(p.vx / 4000, -0.08, 0.08); }
-  if (p.walkT > 0) { bob = Math.abs(Math.sin(p.walkT)) * 7; rot = Math.sin(p.walkT) * 0.06; }
-  if (state === 'dead' || state === 'gameover') { rot = stateT * 6; }
+  // Прыжок: растяжение на взлёте и наклон при падении.
+  if (!p.onGround && state === 'play') {
+    if (p.vy < 0) { sy *= 1.1; sx *= 0.94; rot = clamp(p.vx / 3000, -0.12, 0.12) - 0.045; }
+    else { sy *= 0.98; sx *= 1.025; rot = clamp(p.vx / 2800, -0.14, 0.14) + 0.04; }
+  }
+  if (p.shootAnim > 0) rot -= p.recoil * 0.045;
+  if (state === 'dead' || state === 'gameover') { rot = p.deathT * 8; bob = 0; sx = 1; sy = 1; }
+
+  // Мягкая тень и штрихи скорости делают движение заметным даже на статичном спрайте.
+  if (p.onGround && state === 'play') {
+    ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = '#03010b';
+    ctx.beginPath(); ctx.ellipse(cx, bottom + 5, running ? 43 : 34, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  if (running) {
+    ctx.save(); ctx.strokeStyle = 'rgba(216,201,255,0.65)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const lx = cx - p.face * (42 + i * 13), ly = bottom - 10 - i * 12;
+      ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - p.face * (18 + i * 6), ly); ctx.stroke();
+    }
+    ctx.restore();
+  } else if (!p.onGround && state === 'play') {
+    ctx.save(); ctx.strokeStyle = 'rgba(127,246,255,0.45)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    const dir = p.vy < 0 ? 1 : -1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(cx + i * 27, bottom + dir * (6 + Math.abs(i) * 7));
+      ctx.lineTo(cx + i * 30, bottom + dir * (22 + Math.abs(i) * 8)); ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   ctx.save();
   ctx.translate(cx, bottom - bob);
   ctx.rotate(rot * p.face);
   ctx.scale(sx * p.face, sy);
-  // Тень-обводка для "аниме" читаемости
-  ctx.drawImage(img, -sw * 0.45, -sh, sw, sh);
+  ctx.drawImage(bodyImg, -sw * 0.45, -sh, sw, sh);
+
+  // Рука и бластер вращаются отдельно от тела и следуют за прицелом.
+  if (armImg && armImg.width) {
+    const px = -sw * 0.45 + 153 / 232 * sw;
+    const py = -sh + 145 / 300 * sh;
+    const aiming = p.shootAnim > 0 || keys.shoot || mouseShooting;
+    // Исходный ствол наклонён на 0.22 радиана — компенсируем это при точном прицеле.
+    const localAim = aiming ? (p.face > 0 ? p.aimAngle : Math.PI - p.aimAngle) + 0.22 : 0;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(localAim - p.recoil * 0.12);
+    ctx.translate(-Math.cos(localAim) * p.recoil * 6, -Math.sin(localAim) * p.recoil * 6);
+    ctx.drawImage(armImg, -sw * 0.45 - px, -sh - py, sw, sh);
+    ctx.restore();
+  }
   ctx.restore();
+
+  // Яркая вспышка, кольцо и отдача видны при каждом выстреле.
+  if (p.muzzleFlash > 0 && state === 'play') {
+    const m = muzzle(p.aimAngle), mx = m.x - camX, my = m.y;
+    const power = p.muzzleFlash / 0.09, size = 18 + power * 18;
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(p.aimAngle);
+    ctx.shadowColor = '#65f5ff'; ctx.shadowBlur = 26;
+    ctx.fillStyle = 'rgba(86,239,255,0.35)'; ctx.beginPath(); ctx.arc(0, 0, size * 1.25, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#dfffff';
+    ctx.beginPath(); ctx.moveTo(size * 1.7, 0); ctx.lineTo(3, -size * 0.45); ctx.lineTo(-4, -size * 0.2);
+    ctx.lineTo(-size * 0.65, 0); ctx.lineTo(-4, size * 0.2); ctx.lineTo(3, size * 0.45); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#8ff8ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, size * (1.4 - power * 0.4), 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Звёзды и вращение во время смерти.
+  if (state === 'dead' || state === 'gameover') {
+    for (let i = 0; i < 4; i++) {
+      const a = p.deathT * 6 + i * Math.PI / 2;
+      const x = cx + Math.cos(a) * 55, y = p.y + 15 + Math.sin(a) * 20;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = i % 2 ? '#ffe14a' : '#ff9fc6';
+      ctx.beginPath();
+      for (let j = 0; j < 10; j++) { const r = j % 2 ? 4 : 10, an = j * Math.PI / 5; ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+  }
 
   // Голова-вертолёт при планировании
   if (p.glide) {
@@ -861,15 +1017,16 @@ function drawWorld() {
     ctx.restore();
   }
   if (state !== 'win') drawJim();
-  // Плазма
+  // Плазма летит и отрисовывается по фактическому углу выстрела.
   for (const b of bullets) {
     const x = b.x - camX;
-    ctx.save();
+    ctx.save(); ctx.translate(x, b.y); ctx.rotate(b.angle || 0);
     ctx.shadowColor = '#3ff0ff'; ctx.shadowBlur = 18;
-    ctx.fillStyle = '#d9fdff';
-    ctx.beginPath(); ctx.ellipse(x, b.y, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(63,240,255,0.5)';
-    ctx.beginPath(); ctx.ellipse(x - Math.sign(b.vx) * 14, b.y, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+    const trail = ctx.createLinearGradient(-42, 0, 16, 0);
+    trail.addColorStop(0, 'rgba(63,240,255,0)'); trail.addColorStop(1, 'rgba(63,240,255,0.75)');
+    ctx.fillStyle = trail; ctx.beginPath(); ctx.ellipse(-15, 0, 32, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#67f3ff'; ctx.beginPath(); ctx.ellipse(0, 0, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e7ffff'; ctx.beginPath(); ctx.ellipse(4, 0, 12, 3.5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
   for (const q of particles) {
@@ -883,6 +1040,21 @@ function drawWorld() {
     outlinedText(f.text, f.x - camX, f.y, f.size, f.color);
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
+  if (mouseAim.active && state === 'play') drawCrosshair();
+}
+
+function drawCrosshair() {
+  const x = mouseAim.x, y = mouseAim.y, pulse = 1 + Math.sin(gameTime * 6) * 0.08;
+  ctx.save(); ctx.translate(x, y); ctx.scale(pulse, pulse);
+  ctx.strokeStyle = 'rgba(216,255,62,0.9)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+    ctx.lineTo(Math.cos(a) * 25, Math.sin(a) * 25); ctx.stroke();
+  }
+  ctx.fillStyle = '#d8ff3e'; ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -933,7 +1105,7 @@ function drawTitle() {
   ctx.fillStyle = 'rgba(5,0,20,0.7)'; ctx.beginPath(); ctx.roundRect(W / 2 - 520, 546, 1040, 74, 14); ctx.fill();
   ctx.font = '700 20px Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#e8e0ff';
   ctx.fillText('← → / A D — бег   •   ↑ / W / ПРОБЕЛ — прыжок (держи в падении — голова-вертолёт)', W / 2, 568);
-  ctx.fillText('X / J — плазменный бластер   •   Z / K — удар головой-хлыстом   •   P — пауза   •   M — звук', W / 2, 598);
+  ctx.fillText('ЛКМ / X / J — огонь   •   МЫШЬ — прицел 360°   •   S / ↓ — вниз   •   Z / K — хлыст   •   P — пауза', W / 2, 598);
 }
 
 function drawOverlay(title, sub, color) {
