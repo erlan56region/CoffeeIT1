@@ -2050,7 +2050,7 @@ const LEVELS = buildLevels();
 
 let state = 'loading', stateT = 0, gameTime = 0;
 let level = null, player = null, camX = 0, shake = 0;
-let enemies = [], bullets = [], ebullets = [], items = [], particles = [], floaters = [];
+let enemies = [], corpses = [], bullets = [], ebullets = [], items = [], particles = [], floaters = [];
 let movers = [], crates = [], levers = [], plates = [], teleports = [], geysers = [], icicles = [], crushers = [], vents = [], bubbles = [], lamps = [], npcs = [], checkpoints = [];
 let boss = null, exitDoor = null;
 let lives = 5, score = 0, curLevel = 0, levelTime = 0;
@@ -2073,16 +2073,22 @@ function feathers(x, y, n = 6, color = '#1d1d26') {
 function ring(x, y, color, r = 60) { particles.push({ kind: 'ring', x, y, vx: 0, vy: 0, life: 0.35, max: 0.35, size: r, color }); }
 function floatText(x, y, text, color = '#ffe14a') { floaters.push({ x, y, text, color, t: 0 }); }
 function updateParticles(dt) {
+  // затухание скорости не зависит от частоты кадров
+  const d92 = Math.pow(0.92, dt * 60), d97 = Math.pow(0.97, dt * 60), d90 = Math.pow(0.9, dt * 60);
   for (const p of particles) {
     p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
-    if (p.kind === 'puff') { p.vx *= 0.92; p.vy *= 0.92; p.size += dt * 22; }
-    if (p.kind === 'feather') { p.vy = Math.min(p.vy + 300 * dt, 90); p.vx *= 0.97; p.rot += p.vr * dt; }
+    if (p.kind === 'puff') { p.vx *= d92; p.vy *= d92; p.size += dt * 22; }
+    if (p.kind === 'feather') { p.vy = Math.min(p.vy + 300 * dt, 90); p.vx *= d97; p.rot += p.vr * dt; }
     if (p.g) { p.vy += 1400 * dt; p.rot += p.vr * dt; }
-    if (p.kind === 'spark') { p.vx *= 0.9; p.vy *= 0.9; }
+    if (p.kind === 'spark') { p.vx *= d90; p.vy *= d90; }
+    if (p.kind === 'pop') { p.vy *= d90; }
   }
+  // поверженные враги: подпрыгивают, кувыркаются и тают
+  for (const c of corpses) { c.deathT += dt; c.vy += 1500 * dt; c.x += c.dvx * dt; c.y += c.vy * dt; c.deathRot += c.dvr * dt; }
+  corpses = corpses.filter(c => c.deathT < 0.6);
   particles = particles.filter(p => p.life > 0);
   if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
-  for (const f of floaters) { f.t += dt; f.y -= 50 * dt; }
+  for (const f of floaters) { f.t += dt; f.y -= 50 * dt * (1.6 - f.t); }
   floaters = floaters.filter(f => f.t < 1.1);
 }
 
@@ -2119,7 +2125,7 @@ function loadLevel(idx) {
   level = { def, loc, theme: loc.theme, cols, w: cols * TS, grid, group, chunks: chunkStarts, active: {}, crumble: {}, rhp: {}, springT: {},
     phase: false, phaseT: 0, segs: {}, dark: !!loc.theme.dark, underwater: !!loc.theme.underwater, slippery: !!loc.theme.slippery,
     checkpoint: null, arena: null, hints: [] };
-  enemies = []; bullets = []; ebullets = []; items = []; particles = []; floaters = [];
+  enemies = []; corpses = []; bullets = []; ebullets = []; items = []; particles = []; floaters = [];
   movers = []; crates = []; levers = []; plates = []; teleports = []; geysers = []; icicles = []; crushers = []; vents = []; bubbles = []; lamps = []; npcs = []; checkpoints = [];
   boss = null; exitDoor = null; banner = null;
   let start = { x: 100, y: 400 };
@@ -2816,6 +2822,8 @@ function giveWeapon(wi) {
 function takeItem(it) {
   const p = player;
   it.taken = true;
+  // предмет не исчезает мгновенно: вспухает и тает
+  particles.push({ kind: 'pop', item: { kind: it.kind, t: it.t }, x: it.x, y: it.y, vx: 0, vy: -120, life: 0.3, max: 0.3 });
   switch (it.kind) {
     case 'a': {
       let any = false;
@@ -3044,10 +3052,12 @@ function bossAttack(b, dt, pcx, x0, x1) {
 }
 
 // ---------- Камера ----------
+let camLook = 0;
 function updateCamera(dt) {
   const p = player;
-  const look = p.face * 120;
-  let target = p.x + p.w / 2 - W * 0.45 + look;
+  // упреждение по направлению взгляда и скорости меняется плавно — без рывка при развороте
+  camLook += (p.face * 90 + clamp(p.vx, -RUN, RUN) * 0.12 - camLook) * lerpK(dt, 2.2);
+  let target = p.x + p.w / 2 - W * 0.45 + camLook;
   let lo = 0, hi = level.w - W;
   if (level.arena) { lo = level.arena.x0; hi = Math.max(lo, level.arena.x1 - W); }
   target = clamp(target, lo, hi);
@@ -3085,7 +3095,7 @@ function makeEnemy(type, def, cx, bottom, inLiquid) {
   const e = { type, def, ai: def.ai || null, w: def.w, h: def.h, x: cx - def.w / 2, y: bottom - def.h, vx: 0, vy: 0,
     hp: Math.round(def.hp * (1 + d)), spd: (def.speed || 0) * (1 + d * 0.3), dmg: Math.round(def.dmg * (1 + d * 0.35)), fireK: 1 - d * 0.3,
     face: -1, t: rand(0, 5), state: 'idle', st: 0, cd: rand(0.5, 2), onGround: false, frozen: 0, flash: 0,
-    homeX: cx, homeY: bottom - def.h, inLiquid, dead: false, hidden: false, k: 1 };
+    homeX: cx, homeY: bottom - def.h, inLiquid, dead: false, hidden: false, k: 1, faceK: -1, vvx: 0, landT: 0, hitT: 0, popT: 0 };
   if (type === 'f' || (type === 'j' && level.underwater)) { e.y = bottom - TS / 2 - def.h / 2; e.homeY = e.y; e.fly = true; }
   if ((def.extra && def.extra.fly) || e.ai === 'teleport' || e.ai === 'zap') e.fly = true;
   if (inLiquid) { e.y = bottom; e.homeY = bottom; e.fly = true; e.cd = rand(0.5, 2.5); }
@@ -3099,7 +3109,7 @@ function makeEnemy(type, def, cx, bottom, inLiquid) {
 }
 
 function freezeEnemy(e) {
-  e.frozen = 6; e.vx = 0; e.vy = 0;
+  e.frozen = 6; e.vx = 0; e.vy = 0; e.ft = e.t;
   SFX.freeze(); sparks(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 14);
   floatText(e.x + e.w / 2, e.y - 6, 'ЗАМОРОЖЕН!', '#bff4ff');
 }
@@ -3123,12 +3133,15 @@ function damageEnemy(e, dmg, fromX, src = 'bullet') {
     return;
   }
   e.hp -= dmg;
-  e.flash = 0.12;
+  e.flash = 0.12; e.hitT = 0.2;
   if (e.frozen > 0 && dmg > 0) { e.frozen = 0; shards(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 8); }
   SFX.hit();
   if (!e.fly && dmg > 0) e.vx += (e.x + e.w / 2 < fromX ? -1 : 1) * 120;
   if (e.hp > 0) return;
   e.dead = true;
+  // анимация гибели: враг подлетает, кувыркается и тает (рисуется отдельно от живых)
+  const dir = e.x + e.w / 2 < fromX ? -1 : 1;
+  corpses.push(Object.assign(e, { deathT: 0, dvx: dir * rand(120, 220), vy: -rand(380, 520), deathRot: 0, dvr: dir * rand(7, 11), frozen: 0, hidden: false }));
   const pts = 100 + e.def.hp * 25;
   score += pts;
   floatText(e.x + e.w / 2, e.y, '+' + pts);
@@ -3202,14 +3215,14 @@ function walkAI(e, dt, speed) {
 function hopAI(e, dt, dist, toP, high = 1) {
   gravityAI(e, dt);
   if (e.onGround) {
-    e.vx *= 0.8; e.cd -= dt;
+    e.vx *= Math.pow(0.8, dt * 60); e.cd -= dt;
     if (e.cd <= 0 && dist < 620) { e.vy = -rand(650, 820) * high; e.vx = toP * e.spd * rand(0.9, 1.4); e.face = toP; e.cd = rand(0.9, 1.6) * e.fireK; e.onGround = false; e.squash = 0.2; e.jumped = true; }
   }
   e.squash = Math.max(0, (e.squash || 0) - dt);
 }
 function chargeAI(e, dt, dist, toP, dy, mult = 3.4) {
   if (e.state === 'charge') { e.vx = e.face * e.spd * mult; e.st -= dt; if (e.st <= 0) { e.state = 'stun'; e.st = 0.8; } if (Math.random() < dt * 20) puff(e.x + e.w / 2 - e.face * e.w / 2, e.y + e.h, 0.6); }
-  else if (e.state === 'stun') { e.vx *= 0.85; e.st -= dt; if (e.st <= 0) e.state = 'idle'; }
+  else if (e.state === 'stun') { e.vx *= Math.pow(0.85, dt * 60); e.st -= dt; if (e.st <= 0) e.state = 'idle'; }
   else if (e.state === 'wind') { e.vx = 0; e.st -= dt; if (e.st <= 0) { e.state = 'charge'; e.st = 1.1; SFX.boss(); } }
   else { walkAI(e, dt, e.spd); if (dist < 430 && Math.abs(dy) < 120) { e.face = toP; e.state = 'wind'; e.st = 0.55; } }
   if (e.state !== 'idle') gravityAI(e, dt, true);
@@ -3226,9 +3239,11 @@ function flyAI(e, dt, dist, pcx, pcy, wide = false) {
     if (d < 20) { e.state = 'idle'; e.cd = rand(1.2, 2.2) * e.fireK; }
     else { e.x += dx / d * 220 * dt; e.y += dy / d * 220 * dt; e.face = Math.sign(dx) || e.face; }
   } else {
-    // «широкий» полёт — большая восьмёрка
-    e.y = e.homeY + Math.sin(e.t * (wide ? 3 : 2.2)) * (wide ? 70 : 26);
-    e.x = e.homeX - e.w / 2 + Math.sin(e.t * (wide ? 0.8 : 0.9)) * (wide ? 190 : 50);
+    // «широкий» полёт — большая восьмёрка; к траектории подтягивается плавно (без рывка после пике)
+    const ty = e.homeY + Math.sin(e.t * (wide ? 3 : 2.2)) * (wide ? 70 : 26);
+    const tx = e.homeX - e.w / 2 + Math.sin(e.t * (wide ? 0.8 : 0.9)) * (wide ? 190 : 50);
+    const kk = lerpK(dt, 7);
+    e.y += (ty - e.y) * kk; e.x += (tx - e.x) * kk;
     e.face = Math.cos(e.t * 0.9) > 0 ? 1 : -1;
     e.cd -= dt;
     if (e.cd <= 0 && dist < 460) {
@@ -3513,11 +3528,19 @@ function updateEnemies(dt) {
       continue;
     }
     const o = { dist, toP: Math.sign(pcx - ecx) || 1, dy: pcy - ecy, pcx, pcy };
+    const x0 = e.x, vy0 = e.vy, wasGround = e.onGround, wasHidden = e.hidden;
     if (e.inLiquid) {
       // выпрыгивает из лавы/кислоты
       if (e.state === 'idle') { e.cd -= dt; e.y = e.homeY + 30; if (e.cd <= 0 && dist < 500) { e.state = 'jump'; e.vy = -1050; SFX.splash(); sparks(ecx, e.homeY, level.theme.liquid[0], 10); } }
       else { e.vy += GRAVITY * 0.9 * dt; e.y += e.vy * dt; e.face = e.vy < 0 ? o.toP : e.face; if (e.y > e.homeY + 30) { e.state = 'idle'; e.cd = rand(1.2, 2.4) * e.fireK; SFX.splash(); } }
     } else (AI[e.ai] || defaultAI)(e, dt, o);
+    // данные для плавной отрисовки: разворот, крен, приземление, появление
+    e.vvx += ((e.x - x0) / Math.max(dt, 1e-4) - e.vvx) * lerpK(dt, 10);
+    e.faceK += (e.face - e.faceK) * lerpK(dt, 16);
+    if (Math.abs(e.faceK) < 0.1) e.faceK = 0.1 * (e.face || 1);
+    if (!wasGround && e.onGround && !e.fly && vy0 > 250) { e.landT = 0.18; e.landPow = clamp(vy0 / 900, 0.35, 1); }
+    if (wasHidden && !e.hidden) e.popT = 0.28;
+    e.landT = Math.max(0, e.landT - dt); e.hitT = Math.max(0, e.hitT - dt); e.popT = Math.max(0, e.popT - dt);
     // касание игрока
     if (!e.hidden && state === 'play' && overlap({ x: e.x + 6, y: e.y + 6, w: e.w - 12, h: e.h - 10 }, p)) hurtPlayer(e.dmg, e.x + e.w / 2);
     if (e.y > H + 60) e.dead = true;
@@ -4523,7 +4546,7 @@ function drawEnemy(e) {
   const cx = e.x + e.w / 2 - camX;
   if (cx < -150 || cx > W + 150) return;
   const fn = DRAW[e.def.draw] || DRAW.blob;
-  const t = e.frozen > 0 ? 0 : e.t;
+  const t = e.frozen > 0 ? (e.ft ?? e.t) : e.t;   // заморозка останавливает позу как есть
   // спрятавшийся враг: бугорок и глазки (табакерка рисует закрытую коробку сама)
   if (e.hidden && e.def.draw !== 'boxJack') {
     ctx.save(); ctx.translate(cx, e.y + e.h);
@@ -4538,7 +4561,7 @@ function drawEnemy(e) {
   // нить паука, лазер вертобота, электрическое поле угря
   if (e.ceil !== undefined && e.hang !== undefined) { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, e.ceil); ctx.lineTo(cx, e.y + 6); ctx.stroke(); }
   if (e.state === 'warn' && e.ai === 'laserFly') {
-    ctx.strokeStyle = Math.floor(gameTime * 16) % 2 ? 'rgba(255,40,40,0.9)' : 'rgba(255,40,40,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+    ctx.strokeStyle = `rgba(255,40,40,${(0.62 + Math.sin(gameTime * 40) * 0.3).toFixed(2)})`; ctx.lineWidth = 2; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -gameTime * 120;
     ctx.beginPath(); ctx.moveTo(cx, e.y + e.h); ctx.lineTo(cx, H); ctx.stroke(); ctx.setLineDash([]);
   } else if (e.state === 'beam' && e.ai === 'laserFly') {
     const bw = 16 + Math.sin(gameTime * 60) * 4;
@@ -4551,18 +4574,36 @@ function drawEnemy(e) {
     for (let i = 0; i < 4; i++) { const a = gameTime * 7 + i * 1.6; ctx.beginPath(); ctx.moveTo(cx, e.y + e.h / 2); for (let k = 1; k <= 4; k++) ctx.lineTo(cx + Math.cos(a) * k * 26 + rand(-8, 8), e.y + e.h / 2 + Math.sin(a) * k * 22 + rand(-8, 8)); ctx.stroke(); }
   }
   ctx.translate(cx, e.y + e.h);
-  ctx.scale(e.face >= 0 ? 1 : -1, 1);
+  // --- мягкая «мультяшная» деформация поверх собственной анимации врага ---
+  const hh = e.h / 2;
+  if (e.deathT !== undefined) {
+    const k = e.deathT / 0.6;
+    ctx.globalAlpha *= Math.max(0, 1 - k * k);
+    const s = 1 + Math.sin(Math.min(1, e.deathT / 0.16) * Math.PI) * 0.3;
+    ctx.translate(0, -hh); ctx.rotate(e.deathRot); ctx.scale(s * (1 - k * 0.3), (2 - s) * (1 - k * 0.3)); ctx.translate(0, hh);
+  } else {
+    if (e.popT > 0) { const p = 1 - e.popT / 0.28, q = p - 1, s = 1 + 2.7 * q * q * q + 1.7 * q * q; ctx.scale(s, s); }
+    if (e.fly && !e.inLiquid && e.def.draw !== 'crow') { ctx.translate(0, -hh); ctx.rotate(clamp(e.vvx / 1400, -0.22, 0.22)); ctx.translate(0, hh); }
+    if (e.squash === undefined && !e.fly) {
+      if (e.landT > 0) { const q = Math.sin((1 - e.landT / 0.18) * Math.PI) * 0.22 * (e.landPow || 0.5); ctx.scale(1 + q, 1 - q); }
+      else if (!e.onGround) { const s = clamp(-e.vy / 1600, -0.06, 0.1); ctx.scale(1 - s * 0.6, 1 + s); }
+    }
+    if (e.hitT > 0) { const h = e.hitT / 0.2, w = Math.sin((1 - h) * Math.PI * 3) * h * 0.14; ctx.scale(1 + w, 1 - w); }
+  }
+  // разворот «бумажным» поворотом, а не мгновенным отражением
+  ctx.scale(e.faceK !== undefined ? e.faceK : (e.face >= 0 ? 1 : -1), 1);
   fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra);
   // щит спереди у щитоносцев
   if (e.ai === 'shield' && e.type !== 'z') {
     ctx.beginPath(); ctx.roundRect(e.w * 0.42, -e.h * 0.95, 14, e.h * 0.85, 6); inkPath('#b8c0d0', 3);
     ctx.fillStyle = '#ffffff'; ctx.globalAlpha *= 0.6; ctx.fillRect(e.w * 0.42 + 3, -e.h * 0.85, 3, e.h * 0.5); ctx.globalAlpha /= 0.6;
   }
-  if (e.flash > 0 && e.def.draw !== 'crow') flashPass(() => fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra), 0.7);
+  const fl = e.deathT !== undefined ? 1 - e.deathT / 0.12 : e.flash / 0.12;
+  if (fl > 0 && e.def.draw !== 'crow') flashPass(() => fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra), 0.75 * Math.min(1, fl));
   ctx.restore();
   if (e.frozen > 0) {
     ctx.save();
-    ctx.globalAlpha = e.frozen < 1 && Math.floor(gameTime * 12) % 2 ? 0.35 : 0.6;
+    ctx.globalAlpha = e.frozen < 1.2 ? 0.45 + Math.sin(gameTime * 26) * 0.15 : 0.6;
     ctx.fillStyle = '#bff4ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.roundRect(e.x - camX - 4, e.y - 4, e.w + 8, e.h + 6, 8); ctx.fill(); ctx.stroke();
     ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff'; ctx.fillRect(e.x - camX + 6, e.y + 4, 10, 4);
@@ -4832,6 +4873,7 @@ function drawBullets() {
       ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 3;
       for (let i = 0; i < 3; i++) { ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.stroke(); }
     } else {
+      motionTrail(x, b.y, b.vx, b.vy, 6, b.color, 0.45);
       glow(x, b.y, 30, b.color, 0.5);
       ctx.fillStyle = b.color; ctx.beginPath(); ctx.ellipse(x - Math.sign(b.vx) * 8, b.y, 18, 6, Math.atan2(b.vy, b.vx), 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(x, b.y, 8, 4, Math.atan2(b.vy, b.vx), 0, 7); ctx.fill();
@@ -4854,6 +4896,7 @@ function drawBullets() {
     } else if (b.egg) { ctx.beginPath(); ctx.ellipse(x, b.y, 10, 13, b.t * 4, 0, 7); inkPath('#f6ecd0', 2.5); }
     else if (b.rock) { ctx.translate(x, b.y); ctx.rotate(b.t * 6); ctx.beginPath(); ctx.moveTo(-14, -6); ctx.lineTo(-4, -14); ctx.lineTo(12, -10); ctx.lineTo(14, 6); ctx.lineTo(0, 14); ctx.lineTo(-12, 8); ctx.closePath(); inkPath(b.color, 2.5); }
     else {
+      motionTrail(x, b.y, b.vx, b.vy, b.r * 0.8, b.color, 0.35);
       glow(x, b.y, b.r * 2.6, b.color, 0.5);
       ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(x, b.y, b.r, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, b.y, b.r * 0.45, 0, 7); ctx.fill();
@@ -4862,6 +4905,14 @@ function drawBullets() {
   }
 }
 
+// Шлейф за быстрым снарядом — движение выглядит плавным даже при 60 кадрах
+function motionTrail(x, y, vx, vy, r, color, a) {
+  const sp = Math.hypot(vx, vy); if (sp < 60) return;
+  const ux = vx / sp, uy = vy / sp, L = Math.min(60, sp * 0.055);
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(x + uy * r, y - ux * r); ctx.lineTo(x - ux * L, y - uy * L); ctx.lineTo(x - uy * r, y + ux * r); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
 function drawParticles() {
   for (const p of particles) {
     const k = Math.max(0, p.life / p.max), x = p.x - camX;
@@ -4869,6 +4920,11 @@ function drawParticles() {
     ctx.globalAlpha = Math.min(1, k * 1.5);
     if (p.kind === 'puff') { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(x, p.y, p.size, 0, 7); ctx.fill(); }
     else if (p.kind === 'spark') { ctx.fillStyle = p.color; ctx.fillRect(x - p.size / 2, p.y - p.size / 2, p.size, p.size); }
+    else if (p.kind === 'pop') {
+      const s = 1 + (1 - k) * 0.9;
+      ctx.globalAlpha = k; ctx.translate(x, p.y); ctx.scale(s, s); ctx.translate(-x, -p.y);
+      drawItem({ kind: p.item.kind, t: p.item.t, x: p.x, y: p.y });
+    }
     else if (p.kind === 'ring') { ctx.strokeStyle = p.color; ctx.lineWidth = 6 * k; ctx.beginPath(); ctx.arc(x, p.y, p.size * (1 - k * 0.7), 0, 7); ctx.stroke(); }
     else if (p.kind === 'shard' || p.kind === 'feather') {
       ctx.translate(x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
@@ -4884,13 +4940,13 @@ function drawParticles() {
 function drawJim() {
   const p = player;
   if (!RIG || !p) return;
-  if (p.inv > 0 && p.inv < 1.2 && Math.floor(p.inv * 16) % 2 === 0 && state === 'play') return;
   const B = playerBones(p);
   ctx.save();
+  if (p.inv > 0 && p.inv < 1.2 && state === 'play') ctx.globalAlpha = 0.55 + Math.cos(p.inv * 30) * 0.35;
   ctx.translate(-camX, 0);
   const jet = { on: p.jet && state === 'play', fuel: p.fuel };
   drawJimRig(B, p.glide && state === 'play', jet);
-  if (p.inv > 1.2 && state === 'play' && Math.floor(p.inv * 24) % 2 === 0) flashPass(() => drawJimRig(B, false, jet), 0.45);
+  if (p.inv > 1.2 && state === 'play') flashPass(() => drawJimRig(B, false, jet), 0.25 + Math.cos(p.inv * 36) * 0.2);
   // Вспышка выстрела — у ствола пистолета, цветом текущего оружия
   if (p.anim.shootT > 0.05) {
     const m = MX.apply(B.armF, RIG.jim.muzzle);
@@ -4947,7 +5003,9 @@ function drawDarkness() {
 
 // ---------- Мир целиком ----------
 function drawWorld() {
-  const sx = shake > 0 ? rand(-1, 1) * shake * 18 : 0, sy = shake > 0 ? rand(-1, 1) * shake * 12 : 0;
+  const st = gameTime * 60, sk = Math.min(1, shake * 2.2) * shake;
+  const sx = shake > 0 ? (Math.sin(st * 1.13) * 0.6 + Math.sin(st * 2.71 + 1) * 0.4) * sk * 26 : 0;
+  const sy = shake > 0 ? (Math.sin(st * 1.37 + 2) * 0.6 + Math.sin(st * 2.29 + 4) * 0.4) * sk * 18 : 0;
   ctx.save();
   ctx.translate(sx, sy);
   drawBackground(level.loc.bg, camX);
@@ -4956,6 +5014,7 @@ function drawWorld() {
   drawMechanics();
   for (const n of npcs) drawNPC(n);
   for (const e of enemies) drawEnemy(e);
+  for (const e of corpses) drawEnemy(e);
   drawBossEntity(boss);
   drawJim();
   drawBullets();
@@ -5321,7 +5380,9 @@ function drawRivalRacer(rv, x, y, t) {
 
 function drawRace() {
   const R = race, me = R.me;
-  const sx = shake > 0 ? rand(-1, 1) * shake * 16 : 0, sy = shake > 0 ? rand(-1, 1) * shake * 10 : 0;
+  const st = gameTime * 60, sk = Math.min(1, shake * 2.2) * shake;
+  const sx = shake > 0 ? (Math.sin(st * 1.13) * 0.6 + Math.sin(st * 2.71 + 1) * 0.4) * sk * 24 : 0;
+  const sy = shake > 0 ? (Math.sin(st * 1.37 + 2) * 0.6 + Math.sin(st * 2.29 + 4) * 0.4) * sk * 15 : 0;
   ctx.save(); ctx.translate(sx, sy);
   drawBackground('race', R.cam, 0.15);
   // звёзды-скорость
@@ -5420,7 +5481,12 @@ function drawRace() {
 'use strict';
 
 let mapSel = 0;
-function setState(s) { state = s; stateT = 0; }
+// Плавное затемнение при смене экрана (кроме выхода из паузы)
+let fadeK = 1;
+function setState(s) {
+  if (!['pause', 'racePause'].includes(state) && ['play', 'map', 'race', 'title', 'ending'].includes(s) && s !== state) fadeK = 0;
+  state = s; stateT = 0;
+}
 
 function playLevel(idx) {
   curLevel = idx;
@@ -5691,12 +5757,27 @@ function render() {
 // ---------- Главный цикл ----------
 let last = performance.now();
 let lastError = null;
+let dtSmooth = 1 / 60;
 function frame(now) {
-  const dt = Math.min(1 / 30, (now - last) / 1000);
+  // Сглаживаем дрожание интервалов между кадрами (браузер выдаёт 15–18 мс вместо ровных 16.7)
+  let raw = (now - last) / 1000;
   last = now;
+  if (!(raw > 0) || raw > 0.25) raw = dtSmooth;     // вкладка была скрыта — не прыгаем
+  dtSmooth = Math.abs(raw - dtSmooth) > 0.012 ? raw : dtSmooth + (raw - dtSmooth) * 0.2;
+  const dt = Math.min(dtSmooth, 1 / 15);
+  // Медленный кадр делим на подшаги ≤ 1/60 с — физика и анимация не «прыгают» и не замедляются
+  const n = Math.min(4, Math.max(1, Math.ceil(dt * 60 - 0.05)));
   try {
-    update(dt);
+    for (let i = 0; i < n; i++) {
+      update(dt / n);
+      if (i === 0) for (const k in pressed) pressed[k] = false;
+    }
     render();
+    if (fadeK < 1) {
+      fadeK = Math.min(1, fadeK + dt / 0.35);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(6,2,18,${(1 - easeOut(fadeK)).toFixed(3)})`; ctx.fillRect(0, 0, W, H);
+    }
   } catch (err) {
     if (!lastError) console.error(err);
     lastError = err;

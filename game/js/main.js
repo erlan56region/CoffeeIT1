@@ -5,7 +5,12 @@
 'use strict';
 
 let mapSel = 0;
-function setState(s) { state = s; stateT = 0; }
+// Плавное затемнение при смене экрана (кроме выхода из паузы)
+let fadeK = 1;
+function setState(s) {
+  if (!['pause', 'racePause'].includes(state) && ['play', 'map', 'race', 'title', 'ending'].includes(s) && s !== state) fadeK = 0;
+  state = s; stateT = 0;
+}
 
 function playLevel(idx) {
   curLevel = idx;
@@ -276,12 +281,27 @@ function render() {
 // ---------- Главный цикл ----------
 let last = performance.now();
 let lastError = null;
+let dtSmooth = 1 / 60;
 function frame(now) {
-  const dt = Math.min(1 / 30, (now - last) / 1000);
+  // Сглаживаем дрожание интервалов между кадрами (браузер выдаёт 15–18 мс вместо ровных 16.7)
+  let raw = (now - last) / 1000;
   last = now;
+  if (!(raw > 0) || raw > 0.25) raw = dtSmooth;     // вкладка была скрыта — не прыгаем
+  dtSmooth = Math.abs(raw - dtSmooth) > 0.012 ? raw : dtSmooth + (raw - dtSmooth) * 0.2;
+  const dt = Math.min(dtSmooth, 1 / 15);
+  // Медленный кадр делим на подшаги ≤ 1/60 с — физика и анимация не «прыгают» и не замедляются
+  const n = Math.min(4, Math.max(1, Math.ceil(dt * 60 - 0.05)));
   try {
-    update(dt);
+    for (let i = 0; i < n; i++) {
+      update(dt / n);
+      if (i === 0) for (const k in pressed) pressed[k] = false;
+    }
     render();
+    if (fadeK < 1) {
+      fadeK = Math.min(1, fadeK + dt / 0.35);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(6,2,18,${(1 - easeOut(fadeK)).toFixed(3)})`; ctx.fillRect(0, 0, W, H);
+    }
   } catch (err) {
     if (!lastError) console.error(err);
     lastError = err;

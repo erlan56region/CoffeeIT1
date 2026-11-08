@@ -10,7 +10,7 @@ function makeEnemy(type, def, cx, bottom, inLiquid) {
   const e = { type, def, ai: def.ai || null, w: def.w, h: def.h, x: cx - def.w / 2, y: bottom - def.h, vx: 0, vy: 0,
     hp: Math.round(def.hp * (1 + d)), spd: (def.speed || 0) * (1 + d * 0.3), dmg: Math.round(def.dmg * (1 + d * 0.35)), fireK: 1 - d * 0.3,
     face: -1, t: rand(0, 5), state: 'idle', st: 0, cd: rand(0.5, 2), onGround: false, frozen: 0, flash: 0,
-    homeX: cx, homeY: bottom - def.h, inLiquid, dead: false, hidden: false, k: 1 };
+    homeX: cx, homeY: bottom - def.h, inLiquid, dead: false, hidden: false, k: 1, faceK: -1, vvx: 0, landT: 0, hitT: 0, popT: 0 };
   if (type === 'f' || (type === 'j' && level.underwater)) { e.y = bottom - TS / 2 - def.h / 2; e.homeY = e.y; e.fly = true; }
   if ((def.extra && def.extra.fly) || e.ai === 'teleport' || e.ai === 'zap') e.fly = true;
   if (inLiquid) { e.y = bottom; e.homeY = bottom; e.fly = true; e.cd = rand(0.5, 2.5); }
@@ -24,7 +24,7 @@ function makeEnemy(type, def, cx, bottom, inLiquid) {
 }
 
 function freezeEnemy(e) {
-  e.frozen = 6; e.vx = 0; e.vy = 0;
+  e.frozen = 6; e.vx = 0; e.vy = 0; e.ft = e.t;
   SFX.freeze(); sparks(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 14);
   floatText(e.x + e.w / 2, e.y - 6, 'ЗАМОРОЖЕН!', '#bff4ff');
 }
@@ -48,12 +48,15 @@ function damageEnemy(e, dmg, fromX, src = 'bullet') {
     return;
   }
   e.hp -= dmg;
-  e.flash = 0.12;
+  e.flash = 0.12; e.hitT = 0.2;
   if (e.frozen > 0 && dmg > 0) { e.frozen = 0; shards(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 8); }
   SFX.hit();
   if (!e.fly && dmg > 0) e.vx += (e.x + e.w / 2 < fromX ? -1 : 1) * 120;
   if (e.hp > 0) return;
   e.dead = true;
+  // анимация гибели: враг подлетает, кувыркается и тает (рисуется отдельно от живых)
+  const dir = e.x + e.w / 2 < fromX ? -1 : 1;
+  corpses.push(Object.assign(e, { deathT: 0, dvx: dir * rand(120, 220), vy: -rand(380, 520), deathRot: 0, dvr: dir * rand(7, 11), frozen: 0, hidden: false }));
   const pts = 100 + e.def.hp * 25;
   score += pts;
   floatText(e.x + e.w / 2, e.y, '+' + pts);
@@ -127,14 +130,14 @@ function walkAI(e, dt, speed) {
 function hopAI(e, dt, dist, toP, high = 1) {
   gravityAI(e, dt);
   if (e.onGround) {
-    e.vx *= 0.8; e.cd -= dt;
+    e.vx *= Math.pow(0.8, dt * 60); e.cd -= dt;
     if (e.cd <= 0 && dist < 620) { e.vy = -rand(650, 820) * high; e.vx = toP * e.spd * rand(0.9, 1.4); e.face = toP; e.cd = rand(0.9, 1.6) * e.fireK; e.onGround = false; e.squash = 0.2; e.jumped = true; }
   }
   e.squash = Math.max(0, (e.squash || 0) - dt);
 }
 function chargeAI(e, dt, dist, toP, dy, mult = 3.4) {
   if (e.state === 'charge') { e.vx = e.face * e.spd * mult; e.st -= dt; if (e.st <= 0) { e.state = 'stun'; e.st = 0.8; } if (Math.random() < dt * 20) puff(e.x + e.w / 2 - e.face * e.w / 2, e.y + e.h, 0.6); }
-  else if (e.state === 'stun') { e.vx *= 0.85; e.st -= dt; if (e.st <= 0) e.state = 'idle'; }
+  else if (e.state === 'stun') { e.vx *= Math.pow(0.85, dt * 60); e.st -= dt; if (e.st <= 0) e.state = 'idle'; }
   else if (e.state === 'wind') { e.vx = 0; e.st -= dt; if (e.st <= 0) { e.state = 'charge'; e.st = 1.1; SFX.boss(); } }
   else { walkAI(e, dt, e.spd); if (dist < 430 && Math.abs(dy) < 120) { e.face = toP; e.state = 'wind'; e.st = 0.55; } }
   if (e.state !== 'idle') gravityAI(e, dt, true);
@@ -151,9 +154,11 @@ function flyAI(e, dt, dist, pcx, pcy, wide = false) {
     if (d < 20) { e.state = 'idle'; e.cd = rand(1.2, 2.2) * e.fireK; }
     else { e.x += dx / d * 220 * dt; e.y += dy / d * 220 * dt; e.face = Math.sign(dx) || e.face; }
   } else {
-    // «широкий» полёт — большая восьмёрка
-    e.y = e.homeY + Math.sin(e.t * (wide ? 3 : 2.2)) * (wide ? 70 : 26);
-    e.x = e.homeX - e.w / 2 + Math.sin(e.t * (wide ? 0.8 : 0.9)) * (wide ? 190 : 50);
+    // «широкий» полёт — большая восьмёрка; к траектории подтягивается плавно (без рывка после пике)
+    const ty = e.homeY + Math.sin(e.t * (wide ? 3 : 2.2)) * (wide ? 70 : 26);
+    const tx = e.homeX - e.w / 2 + Math.sin(e.t * (wide ? 0.8 : 0.9)) * (wide ? 190 : 50);
+    const kk = lerpK(dt, 7);
+    e.y += (ty - e.y) * kk; e.x += (tx - e.x) * kk;
     e.face = Math.cos(e.t * 0.9) > 0 ? 1 : -1;
     e.cd -= dt;
     if (e.cd <= 0 && dist < 460) {
@@ -438,11 +443,19 @@ function updateEnemies(dt) {
       continue;
     }
     const o = { dist, toP: Math.sign(pcx - ecx) || 1, dy: pcy - ecy, pcx, pcy };
+    const x0 = e.x, vy0 = e.vy, wasGround = e.onGround, wasHidden = e.hidden;
     if (e.inLiquid) {
       // выпрыгивает из лавы/кислоты
       if (e.state === 'idle') { e.cd -= dt; e.y = e.homeY + 30; if (e.cd <= 0 && dist < 500) { e.state = 'jump'; e.vy = -1050; SFX.splash(); sparks(ecx, e.homeY, level.theme.liquid[0], 10); } }
       else { e.vy += GRAVITY * 0.9 * dt; e.y += e.vy * dt; e.face = e.vy < 0 ? o.toP : e.face; if (e.y > e.homeY + 30) { e.state = 'idle'; e.cd = rand(1.2, 2.4) * e.fireK; SFX.splash(); } }
     } else (AI[e.ai] || defaultAI)(e, dt, o);
+    // данные для плавной отрисовки: разворот, крен, приземление, появление
+    e.vvx += ((e.x - x0) / Math.max(dt, 1e-4) - e.vvx) * lerpK(dt, 10);
+    e.faceK += (e.face - e.faceK) * lerpK(dt, 16);
+    if (Math.abs(e.faceK) < 0.1) e.faceK = 0.1 * (e.face || 1);
+    if (!wasGround && e.onGround && !e.fly && vy0 > 250) { e.landT = 0.18; e.landPow = clamp(vy0 / 900, 0.35, 1); }
+    if (wasHidden && !e.hidden) e.popT = 0.28;
+    e.landT = Math.max(0, e.landT - dt); e.hitT = Math.max(0, e.hitT - dt); e.popT = Math.max(0, e.popT - dt);
     // касание игрока
     if (!e.hidden && state === 'play' && overlap({ x: e.x + 6, y: e.y + 6, w: e.w - 12, h: e.h - 10 }, p)) hurtPlayer(e.dmg, e.x + e.w / 2);
     if (e.y > H + 60) e.dead = true;

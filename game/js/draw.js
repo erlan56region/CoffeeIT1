@@ -993,7 +993,7 @@ function drawEnemy(e) {
   const cx = e.x + e.w / 2 - camX;
   if (cx < -150 || cx > W + 150) return;
   const fn = DRAW[e.def.draw] || DRAW.blob;
-  const t = e.frozen > 0 ? 0 : e.t;
+  const t = e.frozen > 0 ? (e.ft ?? e.t) : e.t;   // заморозка останавливает позу как есть
   // спрятавшийся враг: бугорок и глазки (табакерка рисует закрытую коробку сама)
   if (e.hidden && e.def.draw !== 'boxJack') {
     ctx.save(); ctx.translate(cx, e.y + e.h);
@@ -1008,7 +1008,7 @@ function drawEnemy(e) {
   // нить паука, лазер вертобота, электрическое поле угря
   if (e.ceil !== undefined && e.hang !== undefined) { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, e.ceil); ctx.lineTo(cx, e.y + 6); ctx.stroke(); }
   if (e.state === 'warn' && e.ai === 'laserFly') {
-    ctx.strokeStyle = Math.floor(gameTime * 16) % 2 ? 'rgba(255,40,40,0.9)' : 'rgba(255,40,40,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+    ctx.strokeStyle = `rgba(255,40,40,${(0.62 + Math.sin(gameTime * 40) * 0.3).toFixed(2)})`; ctx.lineWidth = 2; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -gameTime * 120;
     ctx.beginPath(); ctx.moveTo(cx, e.y + e.h); ctx.lineTo(cx, H); ctx.stroke(); ctx.setLineDash([]);
   } else if (e.state === 'beam' && e.ai === 'laserFly') {
     const bw = 16 + Math.sin(gameTime * 60) * 4;
@@ -1021,18 +1021,36 @@ function drawEnemy(e) {
     for (let i = 0; i < 4; i++) { const a = gameTime * 7 + i * 1.6; ctx.beginPath(); ctx.moveTo(cx, e.y + e.h / 2); for (let k = 1; k <= 4; k++) ctx.lineTo(cx + Math.cos(a) * k * 26 + rand(-8, 8), e.y + e.h / 2 + Math.sin(a) * k * 22 + rand(-8, 8)); ctx.stroke(); }
   }
   ctx.translate(cx, e.y + e.h);
-  ctx.scale(e.face >= 0 ? 1 : -1, 1);
+  // --- мягкая «мультяшная» деформация поверх собственной анимации врага ---
+  const hh = e.h / 2;
+  if (e.deathT !== undefined) {
+    const k = e.deathT / 0.6;
+    ctx.globalAlpha *= Math.max(0, 1 - k * k);
+    const s = 1 + Math.sin(Math.min(1, e.deathT / 0.16) * Math.PI) * 0.3;
+    ctx.translate(0, -hh); ctx.rotate(e.deathRot); ctx.scale(s * (1 - k * 0.3), (2 - s) * (1 - k * 0.3)); ctx.translate(0, hh);
+  } else {
+    if (e.popT > 0) { const p = 1 - e.popT / 0.28, q = p - 1, s = 1 + 2.7 * q * q * q + 1.7 * q * q; ctx.scale(s, s); }
+    if (e.fly && !e.inLiquid && e.def.draw !== 'crow') { ctx.translate(0, -hh); ctx.rotate(clamp(e.vvx / 1400, -0.22, 0.22)); ctx.translate(0, hh); }
+    if (e.squash === undefined && !e.fly) {
+      if (e.landT > 0) { const q = Math.sin((1 - e.landT / 0.18) * Math.PI) * 0.22 * (e.landPow || 0.5); ctx.scale(1 + q, 1 - q); }
+      else if (!e.onGround) { const s = clamp(-e.vy / 1600, -0.06, 0.1); ctx.scale(1 - s * 0.6, 1 + s); }
+    }
+    if (e.hitT > 0) { const h = e.hitT / 0.2, w = Math.sin((1 - h) * Math.PI * 3) * h * 0.14; ctx.scale(1 + w, 1 - w); }
+  }
+  // разворот «бумажным» поворотом, а не мгновенным отражением
+  ctx.scale(e.faceK !== undefined ? e.faceK : (e.face >= 0 ? 1 : -1), 1);
   fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra);
   // щит спереди у щитоносцев
   if (e.ai === 'shield' && e.type !== 'z') {
     ctx.beginPath(); ctx.roundRect(e.w * 0.42, -e.h * 0.95, 14, e.h * 0.85, 6); inkPath('#b8c0d0', 3);
     ctx.fillStyle = '#ffffff'; ctx.globalAlpha *= 0.6; ctx.fillRect(e.w * 0.42 + 3, -e.h * 0.85, 3, e.h * 0.5); ctx.globalAlpha /= 0.6;
   }
-  if (e.flash > 0 && e.def.draw !== 'crow') flashPass(() => fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra), 0.7);
+  const fl = e.deathT !== undefined ? 1 - e.deathT / 0.12 : e.flash / 0.12;
+  if (fl > 0 && e.def.draw !== 'crow') flashPass(() => fn(e, e.w, e.h, t, e.def.c1, e.def.c2, e.def.extra), 0.75 * Math.min(1, fl));
   ctx.restore();
   if (e.frozen > 0) {
     ctx.save();
-    ctx.globalAlpha = e.frozen < 1 && Math.floor(gameTime * 12) % 2 ? 0.35 : 0.6;
+    ctx.globalAlpha = e.frozen < 1.2 ? 0.45 + Math.sin(gameTime * 26) * 0.15 : 0.6;
     ctx.fillStyle = '#bff4ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.roundRect(e.x - camX - 4, e.y - 4, e.w + 8, e.h + 6, 8); ctx.fill(); ctx.stroke();
     ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff'; ctx.fillRect(e.x - camX + 6, e.y + 4, 10, 4);
@@ -1302,6 +1320,7 @@ function drawBullets() {
       ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 3;
       for (let i = 0; i < 3; i++) { ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.stroke(); }
     } else {
+      motionTrail(x, b.y, b.vx, b.vy, 6, b.color, 0.45);
       glow(x, b.y, 30, b.color, 0.5);
       ctx.fillStyle = b.color; ctx.beginPath(); ctx.ellipse(x - Math.sign(b.vx) * 8, b.y, 18, 6, Math.atan2(b.vy, b.vx), 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(x, b.y, 8, 4, Math.atan2(b.vy, b.vx), 0, 7); ctx.fill();
@@ -1324,6 +1343,7 @@ function drawBullets() {
     } else if (b.egg) { ctx.beginPath(); ctx.ellipse(x, b.y, 10, 13, b.t * 4, 0, 7); inkPath('#f6ecd0', 2.5); }
     else if (b.rock) { ctx.translate(x, b.y); ctx.rotate(b.t * 6); ctx.beginPath(); ctx.moveTo(-14, -6); ctx.lineTo(-4, -14); ctx.lineTo(12, -10); ctx.lineTo(14, 6); ctx.lineTo(0, 14); ctx.lineTo(-12, 8); ctx.closePath(); inkPath(b.color, 2.5); }
     else {
+      motionTrail(x, b.y, b.vx, b.vy, b.r * 0.8, b.color, 0.35);
       glow(x, b.y, b.r * 2.6, b.color, 0.5);
       ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(x, b.y, b.r, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, b.y, b.r * 0.45, 0, 7); ctx.fill();
@@ -1332,6 +1352,14 @@ function drawBullets() {
   }
 }
 
+// Шлейф за быстрым снарядом — движение выглядит плавным даже при 60 кадрах
+function motionTrail(x, y, vx, vy, r, color, a) {
+  const sp = Math.hypot(vx, vy); if (sp < 60) return;
+  const ux = vx / sp, uy = vy / sp, L = Math.min(60, sp * 0.055);
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(x + uy * r, y - ux * r); ctx.lineTo(x - ux * L, y - uy * L); ctx.lineTo(x - uy * r, y + ux * r); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
 function drawParticles() {
   for (const p of particles) {
     const k = Math.max(0, p.life / p.max), x = p.x - camX;
@@ -1339,6 +1367,11 @@ function drawParticles() {
     ctx.globalAlpha = Math.min(1, k * 1.5);
     if (p.kind === 'puff') { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(x, p.y, p.size, 0, 7); ctx.fill(); }
     else if (p.kind === 'spark') { ctx.fillStyle = p.color; ctx.fillRect(x - p.size / 2, p.y - p.size / 2, p.size, p.size); }
+    else if (p.kind === 'pop') {
+      const s = 1 + (1 - k) * 0.9;
+      ctx.globalAlpha = k; ctx.translate(x, p.y); ctx.scale(s, s); ctx.translate(-x, -p.y);
+      drawItem({ kind: p.item.kind, t: p.item.t, x: p.x, y: p.y });
+    }
     else if (p.kind === 'ring') { ctx.strokeStyle = p.color; ctx.lineWidth = 6 * k; ctx.beginPath(); ctx.arc(x, p.y, p.size * (1 - k * 0.7), 0, 7); ctx.stroke(); }
     else if (p.kind === 'shard' || p.kind === 'feather') {
       ctx.translate(x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
@@ -1354,13 +1387,13 @@ function drawParticles() {
 function drawJim() {
   const p = player;
   if (!RIG || !p) return;
-  if (p.inv > 0 && p.inv < 1.2 && Math.floor(p.inv * 16) % 2 === 0 && state === 'play') return;
   const B = playerBones(p);
   ctx.save();
+  if (p.inv > 0 && p.inv < 1.2 && state === 'play') ctx.globalAlpha = 0.55 + Math.cos(p.inv * 30) * 0.35;
   ctx.translate(-camX, 0);
   const jet = { on: p.jet && state === 'play', fuel: p.fuel };
   drawJimRig(B, p.glide && state === 'play', jet);
-  if (p.inv > 1.2 && state === 'play' && Math.floor(p.inv * 24) % 2 === 0) flashPass(() => drawJimRig(B, false, jet), 0.45);
+  if (p.inv > 1.2 && state === 'play') flashPass(() => drawJimRig(B, false, jet), 0.25 + Math.cos(p.inv * 36) * 0.2);
   // Вспышка выстрела — у ствола пистолета, цветом текущего оружия
   if (p.anim.shootT > 0.05) {
     const m = MX.apply(B.armF, RIG.jim.muzzle);
@@ -1417,7 +1450,9 @@ function drawDarkness() {
 
 // ---------- Мир целиком ----------
 function drawWorld() {
-  const sx = shake > 0 ? rand(-1, 1) * shake * 18 : 0, sy = shake > 0 ? rand(-1, 1) * shake * 12 : 0;
+  const st = gameTime * 60, sk = Math.min(1, shake * 2.2) * shake;
+  const sx = shake > 0 ? (Math.sin(st * 1.13) * 0.6 + Math.sin(st * 2.71 + 1) * 0.4) * sk * 26 : 0;
+  const sy = shake > 0 ? (Math.sin(st * 1.37 + 2) * 0.6 + Math.sin(st * 2.29 + 4) * 0.4) * sk * 18 : 0;
   ctx.save();
   ctx.translate(sx, sy);
   drawBackground(level.loc.bg, camX);
@@ -1426,6 +1461,7 @@ function drawWorld() {
   drawMechanics();
   for (const n of npcs) drawNPC(n);
   for (const e of enemies) drawEnemy(e);
+  for (const e of corpses) drawEnemy(e);
   drawBossEntity(boss);
   drawJim();
   drawBullets();

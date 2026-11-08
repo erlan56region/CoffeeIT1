@@ -268,7 +268,9 @@ function drawRivalRacer(rv, x, y, t) {
 
 function drawRace() {
   const R = race, me = R.me;
-  const sx = shake > 0 ? rand(-1, 1) * shake * 16 : 0, sy = shake > 0 ? rand(-1, 1) * shake * 10 : 0;
+  const st = gameTime * 60, sk = Math.min(1, shake * 2.2) * shake;
+  const sx = shake > 0 ? (Math.sin(st * 1.13) * 0.6 + Math.sin(st * 2.71 + 1) * 0.4) * sk * 24 : 0;
+  const sy = shake > 0 ? (Math.sin(st * 1.37 + 2) * 0.6 + Math.sin(st * 2.29 + 4) * 0.4) * sk * 15 : 0;
   ctx.save(); ctx.translate(sx, sy);
   drawBackground('race', R.cam, 0.15);
   // звёзды-скорость

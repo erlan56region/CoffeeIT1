@@ -6,7 +6,7 @@
 
 let state = 'loading', stateT = 0, gameTime = 0;
 let level = null, player = null, camX = 0, shake = 0;
-let enemies = [], bullets = [], ebullets = [], items = [], particles = [], floaters = [];
+let enemies = [], corpses = [], bullets = [], ebullets = [], items = [], particles = [], floaters = [];
 let movers = [], crates = [], levers = [], plates = [], teleports = [], geysers = [], icicles = [], crushers = [], vents = [], bubbles = [], lamps = [], npcs = [], checkpoints = [];
 let boss = null, exitDoor = null;
 let lives = 5, score = 0, curLevel = 0, levelTime = 0;
@@ -29,16 +29,22 @@ function feathers(x, y, n = 6, color = '#1d1d26') {
 function ring(x, y, color, r = 60) { particles.push({ kind: 'ring', x, y, vx: 0, vy: 0, life: 0.35, max: 0.35, size: r, color }); }
 function floatText(x, y, text, color = '#ffe14a') { floaters.push({ x, y, text, color, t: 0 }); }
 function updateParticles(dt) {
+  // затухание скорости не зависит от частоты кадров
+  const d92 = Math.pow(0.92, dt * 60), d97 = Math.pow(0.97, dt * 60), d90 = Math.pow(0.9, dt * 60);
   for (const p of particles) {
     p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
-    if (p.kind === 'puff') { p.vx *= 0.92; p.vy *= 0.92; p.size += dt * 22; }
-    if (p.kind === 'feather') { p.vy = Math.min(p.vy + 300 * dt, 90); p.vx *= 0.97; p.rot += p.vr * dt; }
+    if (p.kind === 'puff') { p.vx *= d92; p.vy *= d92; p.size += dt * 22; }
+    if (p.kind === 'feather') { p.vy = Math.min(p.vy + 300 * dt, 90); p.vx *= d97; p.rot += p.vr * dt; }
     if (p.g) { p.vy += 1400 * dt; p.rot += p.vr * dt; }
-    if (p.kind === 'spark') { p.vx *= 0.9; p.vy *= 0.9; }
+    if (p.kind === 'spark') { p.vx *= d90; p.vy *= d90; }
+    if (p.kind === 'pop') { p.vy *= d90; }
   }
+  // поверженные враги: подпрыгивают, кувыркаются и тают
+  for (const c of corpses) { c.deathT += dt; c.vy += 1500 * dt; c.x += c.dvx * dt; c.y += c.vy * dt; c.deathRot += c.dvr * dt; }
+  corpses = corpses.filter(c => c.deathT < 0.6);
   particles = particles.filter(p => p.life > 0);
   if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
-  for (const f of floaters) { f.t += dt; f.y -= 50 * dt; }
+  for (const f of floaters) { f.t += dt; f.y -= 50 * dt * (1.6 - f.t); }
   floaters = floaters.filter(f => f.t < 1.1);
 }
 
@@ -75,7 +81,7 @@ function loadLevel(idx) {
   level = { def, loc, theme: loc.theme, cols, w: cols * TS, grid, group, chunks: chunkStarts, active: {}, crumble: {}, rhp: {}, springT: {},
     phase: false, phaseT: 0, segs: {}, dark: !!loc.theme.dark, underwater: !!loc.theme.underwater, slippery: !!loc.theme.slippery,
     checkpoint: null, arena: null, hints: [] };
-  enemies = []; bullets = []; ebullets = []; items = []; particles = []; floaters = [];
+  enemies = []; corpses = []; bullets = []; ebullets = []; items = []; particles = []; floaters = [];
   movers = []; crates = []; levers = []; plates = []; teleports = []; geysers = []; icicles = []; crushers = []; vents = []; bubbles = []; lamps = []; npcs = []; checkpoints = [];
   boss = null; exitDoor = null; banner = null;
   let start = { x: 100, y: 400 };
@@ -772,6 +778,8 @@ function giveWeapon(wi) {
 function takeItem(it) {
   const p = player;
   it.taken = true;
+  // предмет не исчезает мгновенно: вспухает и тает
+  particles.push({ kind: 'pop', item: { kind: it.kind, t: it.t }, x: it.x, y: it.y, vx: 0, vy: -120, life: 0.3, max: 0.3 });
   switch (it.kind) {
     case 'a': {
       let any = false;
@@ -1000,10 +1008,12 @@ function bossAttack(b, dt, pcx, x0, x1) {
 }
 
 // ---------- Камера ----------
+let camLook = 0;
 function updateCamera(dt) {
   const p = player;
-  const look = p.face * 120;
-  let target = p.x + p.w / 2 - W * 0.45 + look;
+  // упреждение по направлению взгляда и скорости меняется плавно — без рывка при развороте
+  camLook += (p.face * 90 + clamp(p.vx, -RUN, RUN) * 0.12 - camLook) * lerpK(dt, 2.2);
+  let target = p.x + p.w / 2 - W * 0.45 + camLook;
   let lo = 0, hi = level.w - W;
   if (level.arena) { lo = level.arena.x0; hi = Math.max(lo, level.arena.x1 - W); }
   target = clamp(target, lo, hi);
