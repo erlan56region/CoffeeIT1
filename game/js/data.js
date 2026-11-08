@@ -33,11 +33,11 @@ const LOCATIONS = [
     key: 'junk', name: 'Свалка Нью-Джанк', bg: 'junk',
     theme: { body: ['#8a6a4a', '#5e432c', '#2e1f14'], top: ['#b8b8b8', '#6e6e6e'], topKind: 'metal', liquid: ['#b8c43a', '#4f5a12'], plat: '#9a7a55' },
     enemies: {
-      e: { name: 'Мусорная крыса', draw: 'rat', c1: '#8d8d99', c2: '#ff9fb0', w: 64, h: 38, hp: 2, speed: 130, dmg: 12 },
-      f: { name: 'Ржавый дрон', draw: 'drone', c1: '#b5733a', c2: '#ffcc33', w: 70, h: 40, hp: 2, speed: 260, dmg: 14 },
+      e: { name: 'Мусорная крыса', draw: 'rat', c1: '#8d8d99', c2: '#ff9fb0', w: 64, h: 38, hp: 2, speed: 110, dmg: 12, ai: 'dash' },
+      f: { name: 'Ржавый дрон-бомбер', draw: 'drone', c1: '#b5733a', c2: '#ffcc33', w: 70, h: 40, hp: 2, speed: 160, dmg: 14, ai: 'bomber' },
       g: { name: 'Бак-плевака', draw: 'can', c1: '#7a8a7a', c2: '#3a4a3a', w: 54, h: 66, hp: 3, dmg: 14, proj: { kind: 'arc', color: '#9a8a5a', speed: 420 } },
-      j: { name: 'Шина-попрыгунья', draw: 'tire', c1: '#2a2a2a', c2: '#777', w: 56, h: 56, hp: 3, speed: 170, dmg: 14 },
-      z: { name: 'Свалочный пёс', draw: 'dog', c1: '#8a5a2a', c2: '#5a3a1a', w: 92, h: 62, hp: 6, speed: 110, dmg: 20 },
+      j: { name: 'Шина-катилка', draw: 'tire', c1: '#2a2a2a', c2: '#777', w: 56, h: 56, hp: 3, speed: 330, dmg: 14, ai: 'roll' },
+      z: { name: 'Свалочный пёс', draw: 'dog', c1: '#8a5a2a', c2: '#5a3a1a', w: 92, h: 62, hp: 6, speed: 110, dmg: 20, ai: 'leap' },
     },
     friend: { name: 'Щенок Питер', draw: 'puppy', lines: ['Гав! Ящики можно толкать. Поставь ящик на кнопку — и дверь откроется!', 'Рычаги переключаются выстрелом или ударом головой-хлыстом!'] },
     boss: { name: 'Мусорный Король', draw: 'junkKing', w: 190, h: 210, hp: 34, mode: 'ground', attacks: ['jump', 'throw', 'charge', 'throw'], color: '#8a6a4a' },
@@ -47,11 +47,11 @@ const LOCATIONS = [
     key: 'ice', name: 'Ледяная планета', bg: 'ice',
     theme: { body: ['#a8dcff', '#5fa6d8', '#2a5a8a'], top: ['#ffffff', '#cfe8ff'], topKind: 'snow', liquid: ['#3a7ad8', '#12306a'], plat: '#bfe6ff', slippery: true },
     enemies: {
-      e: { name: 'Пингвин-скользун', draw: 'penguin', c1: '#1e2533', c2: '#ffb020', w: 52, h: 58, hp: 2, speed: 150, dmg: 12 },
-      f: { name: 'Ледяная мышь', draw: 'bat', c1: '#6ac6ff', c2: '#1d5f9a', w: 76, h: 44, hp: 2, speed: 280, dmg: 14 },
-      g: { name: 'Снеговик-снайпер', draw: 'snowman', c1: '#ffffff', c2: '#ff7a1a', w: 60, h: 86, hp: 3, dmg: 14, proj: { kind: 'arc', color: '#ffffff', speed: 460 } },
-      j: { name: 'Снежный ком', draw: 'blob', c1: '#f4fbff', c2: '#9ac8e8', w: 54, h: 48, hp: 2, speed: 170, dmg: 12 },
-      z: { name: 'Йети-малыш', draw: 'yetiCub', c1: '#f0f6ff', c2: '#7ab0e0', w: 84, h: 80, hp: 7, speed: 90, dmg: 22 },
+      e: { name: 'Пингвин-скользун', draw: 'penguin', c1: '#1e2533', c2: '#ffb020', w: 52, h: 58, hp: 2, speed: 90, dmg: 12, ai: 'slide' },
+      f: { name: 'Ледяная мышь', draw: 'bat', c1: '#6ac6ff', c2: '#1d5f9a', w: 76, h: 44, hp: 2, speed: 170, dmg: 14, ai: 'sine' },
+      g: { name: 'Снеговик-снайпер', draw: 'snowman', c1: '#ffffff', c2: '#ff7a1a', w: 60, h: 86, hp: 3, dmg: 14, proj: { kind: 'aimed', color: '#ffffff', speed: 420 } },
+      j: { name: 'Снежный ком', draw: 'snowball', c1: '#f4fbff', c2: '#9ac8e8', w: 54, h: 54, hp: 3, speed: 260, dmg: 14, ai: 'grow' },
+      z: { name: 'Йети-малыш', draw: 'yetiCub', c1: '#f0f6ff', c2: '#7ab0e0', w: 84, h: 80, hp: 7, speed: 70, dmg: 22, ai: 'thrower', proj: { kind: 'arc', color: '#e8f6ff', speed: 420 } },
     },
     friend: { name: 'Пингвин Пинг', draw: 'friendPenguin', lines: ['Лёд скользкий! Тормози заранее, а то улетишь на шипы.', 'Сосульки падают, когда под ними пробегаешь. Беги быстрее!'] },
     boss: { name: 'Снежный Йети', draw: 'yeti', w: 180, h: 200, hp: 38, mode: 'ground', attacks: ['jump', 'throw', 'charge', 'spread'], color: '#e8f4ff' },
@@ -61,11 +61,11 @@ const LOCATIONS = [
     key: 'lava', name: 'Лавовый вулкан', bg: 'lava',
     theme: { body: ['#5a4040', '#3a2626', '#1a1010'], top: ['#ff7a2a', '#8a2a10'], topKind: 'ember', liquid: ['#ffb42a', '#d8380a'], plat: '#6a4a40', glowLiquid: true },
     enemies: {
-      e: { name: 'Магмовый слизень', draw: 'blob', c1: '#ff7a2a', c2: '#a82a0a', w: 58, h: 44, hp: 2, speed: 70, dmg: 14, extra: { glow: '#ffcc33' } },
-      f: { name: 'Огненный бес', draw: 'imp', c1: '#ff3a2a', c2: '#ffcc33', w: 60, h: 66, hp: 2, speed: 260, dmg: 15, extra: { fly: 1 } },
-      g: { name: 'Лавовая пушка', draw: 'turret', c1: '#4a3030', c2: '#ffb42a', w: 52, h: 48, hp: 3, dmg: 16, proj: { kind: 'arc', color: '#ff8a1a', speed: 480 } },
+      e: { name: 'Магмовый ком', draw: 'magma', c1: '#ff7a2a', c2: '#3a2020', w: 60, h: 48, hp: 3, speed: 70, dmg: 14, ai: 'split' },
+      f: { name: 'Огненный бес', draw: 'imp', c1: '#ff3a2a', c2: '#ffcc33', w: 60, h: 66, hp: 2, speed: 200, dmg: 15, extra: { fly: 1 }, ai: 'shootFly', proj: { kind: 'aimed', color: '#ff9a2a', speed: 330 } },
+      g: { name: 'Мини-вулкан', draw: 'volcano', c1: '#5a3a30', c2: '#ffb42a', w: 70, h: 56, hp: 4, dmg: 16, ai: 'burst', proj: { kind: 'arc', color: '#ff8a1a', speed: 480 } },
       j: { name: 'Лавовая рыба', draw: 'fish', c1: '#ff5a1a', c2: '#ffd23f', w: 64, h: 40, hp: 2, speed: 0, dmg: 16 },
-      z: { name: 'Каменный жук', draw: 'bug', c1: '#3a2a2a', c2: '#ff7a2a', w: 90, h: 60, hp: 8, speed: 80, dmg: 22, extra: { cracks: 1 } },
+      z: { name: 'Огненная саламандра', draw: 'salamander', c1: '#ff4a1a', c2: '#ffd23f', w: 104, h: 50, hp: 8, speed: 80, dmg: 22, ai: 'fireCharge' },
     },
     friend: { name: 'Профессор Улитка', draw: 'snail', lines: ['Гейзеры извергаются по очереди. Сосчитай до трёх — и вперёд!', 'Лава больно жжётся. Ищи рычаги, они выдвигают мосты.'] },
     boss: { name: 'Магмовый Голем', draw: 'golem', w: 190, h: 210, hp: 42, mode: 'ground', attacks: ['jump', 'spread', 'throw', 'jump'], color: '#5a3030' },
@@ -75,11 +75,11 @@ const LOCATIONS = [
     key: 'water', name: 'Подводный город', bg: 'water',
     theme: { body: ['#3a8a8a', '#245a6a', '#10303a'], top: ['#3fd88a', '#1a7a4a'], topKind: 'weed', liquid: ['#8a3ad8', '#3a128a'], plat: '#4a9a8a', underwater: true, ceiling: true },
     enemies: {
-      e: { name: 'Краб-щелкун', draw: 'crab', c1: '#ff5a3a', c2: '#a8240a', w: 70, h: 44, hp: 3, speed: 90, dmg: 14 },
-      f: { name: 'Пиранья', draw: 'fish', c1: '#7a8ab0', c2: '#ff3a4a', w: 64, h: 40, hp: 2, speed: 230, dmg: 15 },
-      g: { name: 'Морской ёж', draw: 'urchin', c1: '#4a1a6a', c2: '#ff7ad8', w: 54, h: 54, hp: 3, dmg: 14, proj: { kind: 'aimed', color: '#ff7ad8', speed: 260 } },
-      j: { name: 'Медуза', draw: 'jelly', c1: '#ff9ad8', c2: '#b04ad8', w: 56, h: 64, hp: 2, speed: 90, dmg: 14 },
-      z: { name: 'Электроугорь', draw: 'eel', c1: '#3ad8a8', c2: '#ffff5a', w: 110, h: 40, hp: 6, speed: 130, dmg: 20 },
+      e: { name: 'Краб-щелкун', draw: 'crab', c1: '#ff5a3a', c2: '#a8240a', w: 70, h: 44, hp: 3, speed: 80, dmg: 14, ai: 'shield' },
+      f: { name: 'Пиранья', draw: 'piranha', c1: '#7a8ab0', c2: '#ff3a4a', w: 62, h: 44, hp: 2, speed: 150, dmg: 15, ai: 'chase' },
+      g: { name: 'Морской ёж', draw: 'urchin', c1: '#4a1a6a', c2: '#ff7ad8', w: 54, h: 54, hp: 3, dmg: 14, ai: 'ring', proj: { kind: 'aimed', color: '#ff7ad8', speed: 230 } },
+      j: { name: 'Медуза', draw: 'jelly', c1: '#ff9ad8', c2: '#b04ad8', w: 56, h: 64, hp: 2, speed: 90, dmg: 14, ai: 'drift' },
+      z: { name: 'Электроугорь', draw: 'eel', c1: '#3ad8a8', c2: '#ffff5a', w: 110, h: 40, hp: 6, speed: 130, dmg: 20, ai: 'zap' },
     },
     friend: { name: 'Рыба Боб', draw: 'fishFriend', lines: ['Буль! Под водой жми прыжок, чтобы плыть вверх. Следи за кислородом!', 'Пузыри из трещин возвращают воздух. Ключ открывает замок!'] },
     boss: { name: 'Удильщик-мутант', draw: 'angler', w: 230, h: 150, hp: 40, mode: 'swim', attacks: ['charge', 'spread', 'charge', 'summon'], color: '#3a2a6a' },
@@ -93,11 +93,11 @@ const LOCATIONS = [
     key: 'whale', name: 'Чрево космокита', bg: 'whale',
     theme: { body: ['#d86a7a', '#a8404f', '#5a1a26'], top: ['#ffb0c0', '#d86a8a'], topKind: 'flesh', liquid: ['#b6ff3a', '#4f9a0a'], plat: '#e08a9a' },
     enemies: {
-      e: { name: 'Паразит', draw: 'bug', c1: '#ff9ac8', c2: '#a83a6a', w: 66, h: 42, hp: 3, speed: 90, dmg: 14, extra: { many: 1 } },
-      f: { name: 'Глазастик', draw: 'eye', c1: '#fff4f0', c2: '#3ab0ff', w: 54, h: 54, hp: 2, speed: 220, dmg: 14 },
+      e: { name: 'Клещ-засада', draw: 'tick', c1: '#ff9ac8', c2: '#a83a6a', w: 62, h: 42, hp: 3, speed: 120, dmg: 14, ai: 'ambush' },
+      f: { name: 'Глазастик', draw: 'eye', c1: '#fff4f0', c2: '#3ab0ff', w: 54, h: 54, hp: 2, speed: 220, dmg: 14, ai: 'shootFly', proj: { kind: 'aimed', color: '#3ab0ff', speed: 300 } },
       g: { name: 'Желудочный полип', draw: 'polyp', c1: '#d85a8a', c2: '#b6ff3a', w: 56, h: 64, hp: 3, dmg: 16, proj: { kind: 'arc', color: '#b6ff3a', speed: 440 } },
-      j: { name: 'Микроб-попрыгун', draw: 'blob', c1: '#9aff7a', c2: '#3a9a3a', w: 50, h: 46, hp: 2, speed: 180, dmg: 14, extra: { cilia: 1 } },
-      z: { name: 'Ленточный червь', draw: 'worm', c1: '#f0e8c8', c2: '#c8a878', w: 120, h: 46, hp: 8, speed: 100, dmg: 22 },
+      j: { name: 'Микроб-делитель', draw: 'microbe', c1: '#9aff7a', c2: '#3a9a3a', w: 56, h: 52, hp: 3, speed: 180, dmg: 14, ai: 'split' },
+      z: { name: 'Ленточный червь', draw: 'worm', c1: '#f0e8c8', c2: '#c8a878', w: 120, h: 46, hp: 8, speed: 120, dmg: 22, ai: 'burrow' },
     },
     friend: { name: 'Моряк Иона', draw: 'sailor', lines: ['Меня кит проглотил тридцать лет назад! Красные и синие наросты то появляются, то исчезают.', 'Кислота внизу — не наступай. Мягкие наросты рассыпаются под ногами!'] },
     boss: { name: 'Королева Паразитов', draw: 'parasiteQueen', w: 210, h: 190, hp: 46, mode: 'static', attacks: ['spread', 'summon', 'throw', 'laser'], color: '#a83a8a' },
@@ -107,11 +107,11 @@ const LOCATIONS = [
     key: 'factory', name: 'Фабрика роботов', bg: 'factory',
     theme: { body: ['#7a8494', '#4f5866', '#262b33'], top: ['#ffd23f', '#1a1a1a'], topKind: 'hazard', liquid: ['#ff9a2a', '#c83a0a'], plat: '#8a94a4' },
     enemies: {
-      e: { name: 'Робо-шагун', draw: 'robot', c1: '#9aa4b4', c2: '#ff3a3a', w: 56, h: 70, hp: 3, speed: 90, dmg: 14 },
-      f: { name: 'Дрон-разведчик', draw: 'drone', c1: '#5a6a8a', c2: '#3ae0ff', w: 70, h: 40, hp: 2, speed: 280, dmg: 14 },
-      g: { name: 'Лазерная турель', draw: 'turret', c1: '#5a6070', c2: '#ff2a2a', w: 52, h: 48, hp: 4, dmg: 18, proj: { kind: 'bullet', color: '#ff2a2a', speed: 520 } },
-      j: { name: 'Пружинобот', draw: 'springbot', c1: '#ffcc33', c2: '#5a5a5a', w: 50, h: 60, hp: 3, speed: 190, dmg: 14 },
-      z: { name: 'Робот-таран', draw: 'tank', c1: '#6a7a5a', c2: '#ffd23f', w: 100, h: 72, hp: 10, speed: 100, dmg: 24 },
+      e: { name: 'Робо-шагун', draw: 'robot', c1: '#9aa4b4', c2: '#ff3a3a', w: 56, h: 70, hp: 3, speed: 80, dmg: 14, ai: 'shooterWalk', proj: { kind: 'bullet', color: '#ff3a3a', speed: 420 } },
+      f: { name: 'Вертобот', draw: 'heliBot', c1: '#5a6a8a', c2: '#3ae0ff', w: 66, h: 50, hp: 3, speed: 150, dmg: 14, ai: 'laserFly' },
+      g: { name: 'Страж-тренога', draw: 'sentry', c1: '#5a6070', c2: '#ff2a2a', w: 56, h: 72, hp: 4, dmg: 16, ai: 'burst', proj: { kind: 'bullet', color: '#ff2a2a', speed: 520 } },
+      j: { name: 'Пружинобот', draw: 'springbot', c1: '#ffcc33', c2: '#5a5a5a', w: 50, h: 60, hp: 3, speed: 190, dmg: 14, ai: 'stomp' },
+      z: { name: 'Робот-таран', draw: 'tank', c1: '#6a7a5a', c2: '#ffd23f', w: 100, h: 72, hp: 10, speed: 100, dmg: 24, ai: 'shield' },
     },
     friend: { name: 'Робот Болтик', draw: 'friendRobot', lines: ['Бип-буп! Лазерные барьеры выключаются рычагом. Найди его!', 'Прессы падают по таймеру. Пробегай, когда пресс поднимается!'] },
     boss: { name: 'Мега-Робот', draw: 'megaRobot', w: 200, h: 220, hp: 52, mode: 'ground', attacks: ['laser', 'jump', 'spread', 'summon'], color: '#7a8494' },
@@ -121,11 +121,11 @@ const LOCATIONS = [
     key: 'crystal', name: 'Кристальные пещеры', bg: 'crystal',
     theme: { body: ['#5a4a9a', '#3a2a6a', '#1a1238'], top: ['#7af0ff', '#d84aff'], topKind: 'crystal', liquid: ['#d84aff', '#5a128a'], plat: '#7a6ac8' },
     enemies: {
-      e: { name: 'Кристальный паучок', draw: 'spider', c1: '#5af0ff', c2: '#1a6a8a', w: 66, h: 42, hp: 3, speed: 120, dmg: 15 },
-      f: { name: 'Аметистовая мышь', draw: 'bat', c1: '#b05aff', c2: '#4a1a8a', w: 76, h: 44, hp: 3, speed: 290, dmg: 15 },
-      g: { name: 'Самоцвет-стрелок', draw: 'gem', c1: '#ff4aa8', c2: '#8a124a', w: 50, h: 60, hp: 4, dmg: 16, proj: { kind: 'aimed', color: '#ff4aa8', speed: 360 } },
-      j: { name: 'Прыгучий кристалл', draw: 'gem', c1: '#5affb0', c2: '#128a4a', w: 46, h: 56, hp: 3, speed: 190, dmg: 15, extra: { hop: 1 } },
-      z: { name: 'Каменный голем', draw: 'stoneGolem', c1: '#6a6a8a', c2: '#5af0ff', w: 86, h: 86, hp: 10, speed: 80, dmg: 24 },
+      e: { name: 'Кристальный паучок', draw: 'spider', c1: '#5af0ff', c2: '#1a6a8a', w: 66, h: 42, hp: 3, speed: 120, dmg: 15, ai: 'dropper' },
+      f: { name: 'Аметистовая моль', draw: 'moth', c1: '#b05aff', c2: '#ffd8ff', w: 72, h: 52, hp: 3, speed: 160, dmg: 15, ai: 'blinkFly' },
+      g: { name: 'Самоцвет-стрелок', draw: 'gem', c1: '#ff4aa8', c2: '#8a124a', w: 50, h: 60, hp: 4, dmg: 16, ai: 'fan', proj: { kind: 'aimed', color: '#ff4aa8', speed: 340 } },
+      j: { name: 'Жеода', draw: 'geode', c1: '#7a6a7a', c2: '#5affb0', w: 56, h: 52, hp: 3, speed: 200, dmg: 15, ai: 'armorHop' },
+      z: { name: 'Каменный голем', draw: 'stoneGolem', c1: '#6a6a8a', c2: '#5af0ff', w: 86, h: 86, hp: 10, speed: 70, dmg: 24, ai: 'thrower', proj: { kind: 'arc', color: '#8a8aa8', speed: 440 } },
     },
     friend: { name: 'Фея Искорка', draw: 'fairy', lines: ['Красные и синие кристаллы мигают по очереди. Запомни ритм!', 'Телепорты переносят тебя к парному порталу. Ищи пары!'] },
     boss: { name: 'Кристальный Паук', draw: 'crystalSpider', w: 230, h: 140, hp: 54, mode: 'ceiling', attacks: ['spread', 'dive', 'spread', 'summon'], color: '#5af0ff' },
@@ -135,11 +135,11 @@ const LOCATIONS = [
     key: 'slime', name: 'Дворец Королевы Слизней', bg: 'slime',
     theme: { body: ['#7aa83a', '#4f7a2a', '#22380f'], top: ['#f0ff5a', '#9ac81a'], topKind: 'goo', liquid: ['#d8ff3a', '#6a9a0a'], plat: '#9ac85a' },
     enemies: {
-      e: { name: 'Слизень-стражник', draw: 'slug', c1: '#f0d83a', c2: '#a88a12', w: 66, h: 46, hp: 4, speed: 80, dmg: 15, extra: { helmet: 1 } },
-      f: { name: 'Пузырь-летун', draw: 'bubbleGuy', c1: '#c8ff9a', c2: '#5aa83a', w: 56, h: 56, hp: 2, speed: 240, dmg: 14 },
-      g: { name: 'Слизнемёт', draw: 'polyp', c1: '#9ad83a', c2: '#f0ff5a', w: 56, h: 64, hp: 4, dmg: 16, proj: { kind: 'arc', color: '#d8ff3a', speed: 460 } },
-      j: { name: 'Желе-попрыгун', draw: 'blob', c1: '#ff5a7a', c2: '#a81a3a', w: 54, h: 50, hp: 3, speed: 200, dmg: 15, extra: { jelly: 1 } },
-      z: { name: 'Гвардеец-слизень', draw: 'slug', c1: '#c8a83a', c2: '#6a5a12', w: 96, h: 64, hp: 10, speed: 90, dmg: 24, extra: { helmet: 1, spear: 1 } },
+      e: { name: 'Улитка-рыцарь', draw: 'snailKnight', c1: '#f0d83a', c2: '#a88a12', w: 66, h: 56, hp: 4, speed: 70, dmg: 15, ai: 'shield' },
+      f: { name: 'Пузырь-летун', draw: 'bubbleGuy', c1: '#c8ff9a', c2: '#5aa83a', w: 56, h: 56, hp: 2, speed: 130, dmg: 14, ai: 'chase' },
+      g: { name: 'Слизе-фонтан', draw: 'slimeFountain', c1: '#9ad83a', c2: '#f0ff5a', w: 60, h: 70, hp: 4, dmg: 16, ai: 'burst', proj: { kind: 'arc', color: '#d8ff3a', speed: 460 } },
+      j: { name: 'Желейный куб', draw: 'jellyCube', c1: '#ff5a7a', c2: '#a81a3a', w: 58, h: 58, hp: 4, speed: 200, dmg: 15, ai: 'split' },
+      z: { name: 'Гвардеец-копейщик', draw: 'slugGuard', c1: '#c8a83a', c2: '#6a5a12', w: 70, h: 100, hp: 10, speed: 80, dmg: 24, ai: 'lunge' },
     },
     friend: { name: 'Шут Слизнячок', draw: 'jester', lines: ['Хи-хи! Не держи прыжок на пружине под шипами — улетишь в потолок!', 'Королева сидит в конце дворца. Говорят, она боится плазмы!'] },
     boss: { name: 'Королева Слизней', draw: 'slugQueen', w: 220, h: 190, hp: 58, mode: 'ground', attacks: ['charge', 'throw', 'summon', 'spread'], color: '#f0c83a' },
@@ -149,11 +149,11 @@ const LOCATIONS = [
     key: 'dark', name: 'Тёмная туманность', bg: 'dark',
     theme: { body: ['#3a2a5a', '#22183a', '#0e0a1a'], top: ['#b05aff', '#5a2a9a'], topKind: 'void', liquid: ['#5a2aff', '#1a0a5a'], plat: '#4a3a7a', dark: true },
     enemies: {
-      e: { name: 'Тень', draw: 'ghost', c1: '#2a1a3a', c2: '#ff3a8a', w: 56, h: 66, hp: 4, speed: 100, dmg: 16 },
-      f: { name: 'Злой глаз', draw: 'eye', c1: '#ffd8d8', c2: '#ff2a2a', w: 56, h: 56, hp: 3, speed: 260, dmg: 16 },
-      g: { name: 'Тёмная турель', draw: 'turret', c1: '#2a2238', c2: '#b05aff', w: 52, h: 48, hp: 5, dmg: 18, proj: { kind: 'aimed', color: '#b05aff', speed: 380 } },
-      j: { name: 'Теневой бес', draw: 'imp', c1: '#5a2a8a', c2: '#ff3a8a', w: 60, h: 66, hp: 3, speed: 200, dmg: 16 },
-      z: { name: 'Кибер-горилла', draw: 'gorilla', c1: '#3a3448', c2: '#ff2a2a', w: 96, h: 90, hp: 12, speed: 110, dmg: 26 },
+      e: { name: 'Тень', draw: 'ghost', c1: '#2a1a3a', c2: '#ff3a8a', w: 56, h: 66, hp: 4, speed: 90, dmg: 16, ai: 'teleport' },
+      f: { name: 'Огненный череп', draw: 'skullFly', c1: '#f0e8d8', c2: '#b05aff', w: 54, h: 54, hp: 3, speed: 190, dmg: 16, ai: 'chase' },
+      g: { name: 'Тёмный обелиск', draw: 'obelisk', c1: '#2a2238', c2: '#b05aff', w: 48, h: 84, hp: 5, dmg: 18, ai: 'homing', proj: { kind: 'aimed', color: '#b05aff', speed: 230 } },
+      j: { name: 'Чёрт из табакерки', draw: 'boxJack', c1: '#5a2a8a', c2: '#ff3a8a', w: 56, h: 56, hp: 4, speed: 220, dmg: 16, ai: 'ambush' },
+      z: { name: 'Кибер-горилла', draw: 'gorilla', c1: '#3a3448', c2: '#ff2a2a', w: 96, h: 90, hp: 12, speed: 110, dmg: 26, ai: 'pound' },
     },
     friend: { name: 'Принцесса Как-Её-Там', draw: 'princess', lines: ['Джим! Я сбежала из клетки, но злодей здесь, в темноте. Фонари освещают путь!', 'Профессор Мозгокрут ждёт в конце. Победи его!'] },
     boss: { name: 'Профессор Мозгокрут', draw: 'professor', w: 180, h: 210, hp: 70, mode: 'fly', attacks: ['laser', 'spread', 'summon', 'dive', 'eggs'], color: '#c8c8c8', final: true },
@@ -779,6 +779,9 @@ const PUZZLE_TIPS = {
   crouch: 'Зажми ↓ (S), чтобы присесть: проползёшь в туннель и увернёшься от пуль.',
   teleport: 'Встань в телепорт — перенесёт к парному. Вернуться можно тем же путём.',
   secret: 'Треснувшую стену можно разбить выстрелами. За ней бывают сюрпризы!',
+  jet: 'Стена слишком высокая? Прыгни, нажми прыжок ещё раз и держи — джетпак поднимет!',
+  laser: 'Лазерный барьер гаснет, когда включён рычаг или нажата кнопка этого участка.',
+  blink: 'Мигающие платформы появляются по очереди — прыгай в такт!',
 };
 
 // ---------- Список уровней ----------
@@ -795,38 +798,3 @@ const LEVEL_NAMES = [
   ['Слизистые ворота', 'Липкие залы', 'Тронный зал'],
   ['Тьма наступает', 'Без света', 'Логово Мозгокрута'],
 ];
-
-function buildLevels() {
-  const levels = [];
-  const usage = {};
-  const generic = Object.keys(CHUNKS).filter(k => !CHUNKS[k].loc && CHUNKS[k].diff);
-  let platIdx = 0;
-  LOCATIONS.forEach((loc, li) => {
-    for (let n = 0; n < 3; n++) {
-      const name = LEVEL_NAMES[li][n];
-      if (loc.race) { levels.push({ loc: li, n, race: n, name }); continue; }
-      const p = platIdx;
-      const r = seeded(li * 131 + n * 17 + 5);
-      const maxDiff = p === 0 && n === 0 ? 1 : p < 2 ? 2 : 3;
-      const spec = Object.keys(CHUNKS).filter(k => CHUNKS[k].loc === loc.key);
-      const pairs = [[0, 1], [1, 2], [2, 0]];
-      const chosen = pairs[n].map(i => spec[i % spec.length]).filter(Boolean);
-      const count = 4 + Math.min(3, Math.floor(p / 3)) + (n === 1 ? 1 : 0);
-      let pool = generic.filter(k => CHUNKS[k].diff <= maxDiff && !chosen.includes(k));
-      // предпочитаем куски, которые реже встречались — чтобы уровни не повторялись
-      pool = shuffle(pool, r).sort((a, b) => (usage[a] || 0) - (usage[b] || 0));
-      const picks = chosen.slice();
-      const needPuzzles = p === 0 && n === 0 ? 1 : 2;
-      for (const k of pool) { if (picks.length >= count) break; if (picks.filter(x => CHUNKS[x].puzzle).length < needPuzzles && !CHUNKS[k].puzzle) continue; picks.push(k); }
-      for (const k of pool) { if (picks.length >= count) break; if (!picks.includes(k)) picks.push(k); }
-      picks.forEach(k => usage[k] = (usage[k] || 0) + 1);
-      const middle = shuffle(picks, r);
-      const chunks = ['start', ...middle, n === 2 ? 'boss' : 'end'];
-      const gift = { '0,1': 1, '1,0': 2, '2,0': 3, '3,0': 4 }[p + ',' + n];
-      levels.push({ loc: li, n, name, chunks, gift, diffK: p, boss: n === 2 });
-    }
-    if (!loc.race) platIdx++;
-  });
-  return levels;
-}
-const LEVELS = buildLevels();

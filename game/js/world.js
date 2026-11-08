@@ -162,7 +162,10 @@ function findFloor(c, r) {
 function groupActive(g) { return !!level.active[g]; }
 function tileAt(c, r) {
   if (c < 0 || c >= level.cols) return 1;
-  if (r < 0) return level.theme.ceiling || tileAt(c, 0) === 1 ? 1 : 0; // стены до верха экрана нельзя перелететь
+  if (r < 0) { // стены и лазеры до верха экрана нельзя перелететь
+    const top = level.grid[0][c];
+    return level.theme.ceiling || tileAt(c, 0) === 1 || (top === 'Z' && !groupActive(level.group[0][c])) ? 1 : 0;
+  }
   if (r >= ROWS) return 0;
   const ch = level.grid[r][c];
   switch (ch) {
@@ -564,7 +567,7 @@ function damageWall(c, r, dmg) {
 function explode(x, y, radius, dmg) {
   SFX.boom(); shake = 0.35;
   ring(x, y, '#ffb43a', radius); sparks(x, y, '#ffb43a', 22, 420); puff(x, y, 2.2, 0, 'rgba(90,70,60,0.8)');
-  for (const e of enemies) if (!e.dead && Math.hypot(e.x + e.w / 2 - x, e.y + e.h / 2 - y) < radius + e.w / 2) damageEnemy(e, dmg, x);
+  for (const e of enemies) if (!e.dead && !e.hidden && Math.hypot(e.x + e.w / 2 - x, e.y + e.h / 2 - y) < radius + e.w / 2) damageEnemy(e, dmg, x, 'blast');
   if (boss && boss.active && !boss.dead && Math.hypot(boss.x - x, boss.y - boss.h / 2 - y) < radius + boss.w / 2) damageBoss(dmg);
   const c0 = Math.floor((x - radius) / TS), c1 = Math.floor((x + radius) / TS), r0 = Math.floor((y - radius) / TS), r1 = Math.floor((y + radius) / TS);
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (charAt(c, r) === 'R') damageWall(c, r, 6);
@@ -589,11 +592,11 @@ function updateBullets(dt) {
       const box = { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 };
       if (hitLeverBox(box) && !b.pierce) { b.life = 0; break; }
       for (const e of enemies) {
-        if (e.dead || b.hit.has(e) || !overlap(box, e)) continue;
+        if (e.dead || e.hidden || b.hit.has(e) || !overlap(box, e)) continue;
         b.hit.add(e);
         if (b.kind === 'rocket') { explode(b.x, b.y, 90, 4); b.life = 0; break; }
         if (b.kind === 'freeze') { freezeEnemy(e); b.life = 0; break; }
-        damageEnemy(e, b.dmg, b.x - b.vx);
+        damageEnemy(e, b.dmg, b.x - b.vx, 'bullet');
         if (!b.pierce) { b.life = 0; break; }
       }
       if (b.life <= 0) break;
@@ -611,6 +614,13 @@ function updateBullets(dt) {
   for (const b of ebullets) {
     b.t += dt; b.life -= dt;
     if (b.g) b.vy += b.g * dt;
+    if (b.homing) {
+      // плавно доворачивает к Джиму
+      const want = Math.atan2(player.y + player.h / 2 - b.y, player.x + player.w / 2 - b.x), cur = Math.atan2(b.vy, b.vx), sp = Math.hypot(b.vx, b.vy);
+      let da = want - cur; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+      const na = cur + clamp(da, -2.2 * dt, 2.2 * dt);
+      b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
+    }
     b.x += b.vx * dt; b.y += b.vy * dt;
     const c = Math.floor(b.x / TS), r = Math.floor(b.y / TS);
     if (tileAt(c, r) === 1 || b.y > H + 40) {
@@ -618,170 +628,17 @@ function updateBullets(dt) {
       b.life = 0; continue;
     }
     const pb = { x: player.x + 4, y: player.y + 6, w: player.w - 8, h: player.h - 8 };
-    if (state === 'play' && overlap({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 }, pb)) { hurtPlayer(b.dmg, b.x); b.life = 0; }
+    if (state === 'play' && overlap({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 }, pb)) { hurtPlayer(b.dmg, b.x); if (!b.flame) b.life = 0; }
   }
   ebullets = ebullets.filter(b => b.life > 0);
 }
 
 function meleeHit(box, dmg) {
   hitLeverBox(box);
-  for (const e of enemies) if (!e.dead && overlap(box, e)) damageEnemy(e, dmg, player.x + player.w / 2);
+  for (const e of enemies) if (!e.dead && !e.hidden && overlap(box, e)) damageEnemy(e, dmg, player.x + player.w / 2, 'melee');
   if (boss && boss.active && !boss.dead && overlap(box, bossBox())) damageBoss(dmg);
   const c0 = Math.floor(box.x / TS), c1 = Math.floor((box.x + box.w) / TS), r0 = Math.floor(box.y / TS), r1 = Math.floor((box.y + box.h) / TS);
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (charAt(c, r) === 'R') damageWall(c, r, 2);
-}
-
-// ---------- Враги ----------
-function makeEnemy(type, def, cx, bottom, inLiquid) {
-  const e = { type, def, w: def.w, h: def.h, x: cx - def.w / 2, y: bottom - def.h, vx: 0, vy: 0, hp: def.hp, face: -1, t: rand(0, 5), state: 'idle',
-    cd: rand(0.5, 2), onGround: false, frozen: 0, flash: 0, homeX: cx, homeY: bottom - def.h, inLiquid, dead: false };
-  if (type === 'f' || (type === 'j' && level.underwater)) { e.y = bottom - TS / 2 - def.h / 2; e.homeY = e.y; e.fly = true; }
-  if (def.extra && def.extra.fly) e.fly = true;
-  if (inLiquid) { e.y = bottom; e.homeY = bottom; e.fly = true; e.cd = rand(0.5, 2.5); }
-  return e;
-}
-function freezeEnemy(e) {
-  e.frozen = 6; e.vx = 0; e.vy = 0;
-  SFX.freeze(); sparks(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 14);
-  floatText(e.x + e.w / 2, e.y - 6, 'ЗАМОРОЖЕН!', '#bff4ff');
-}
-function damageEnemy(e, dmg, fromX) {
-  if (e.dead) return;
-  e.hp -= dmg;
-  e.flash = 0.12;
-  if (e.frozen > 0 && dmg > 0) { e.frozen = 0; shards(e.x + e.w / 2, e.y + e.h / 2, '#bff4ff', 8); }
-  SFX.hit();
-  if (!e.fly && dmg > 0) e.vx += (e.x + e.w / 2 < fromX ? -1 : 1) * 120;
-  if (e.hp <= 0) {
-    e.dead = true;
-    score += 100 + e.def.hp * 25;
-    floatText(e.x + e.w / 2, e.y, '+' + (100 + e.def.hp * 25));
-    if (e.def.draw === 'crow') feathers(e.x + e.w / 2, e.y + e.h / 2, 10);
-    sparks(e.x + e.w / 2, e.y + e.h / 2, e.def.c1, 14, 320);
-    puff(e.x + e.w / 2, e.y + e.h / 2, 1.6, 0);
-    const r = Math.random();
-    if (r < 0.22) items.push({ kind: 'a', x: e.x + e.w / 2, y: e.y + e.h / 2, t: 0, vy: -300, drop: true });
-    else if (r < 0.3) items.push({ kind: 'h', x: e.x + e.w / 2, y: e.y + e.h / 2, t: 0, vy: -300, drop: true });
-  }
-}
-
-function enemyShoot(e, kind) {
-  const pd = e.def.proj; if (!pd) return;
-  const ex = e.x + e.w / 2, ey = e.y + e.h * 0.4;
-  const px = player.x + player.w / 2, py = player.y + player.h * 0.5;
-  const dx = px - ex, dy = py - ey;
-  const k = kind || pd.kind;
-  if (k === 'bullet') ebullets.push({ x: ex + e.face * e.w / 2, y: ey, vx: e.face * pd.speed, vy: 0, life: 3, r: 7, dmg: e.def.dmg, color: pd.color, t: 0 });
-  else if (k === 'aimed') { const d = Math.hypot(dx, dy) || 1; ebullets.push({ x: ex, y: ey, vx: dx / d * pd.speed, vy: dy / d * pd.speed, life: 3, r: 8, dmg: e.def.dmg, color: pd.color, t: 0 }); }
-  else if (k === 'arc') {
-    const tFlight = clamp(Math.abs(dx) / pd.speed, 0.5, 1.4);
-    ebullets.push({ x: ex, y: ey - 10, vx: dx / tFlight, vy: (dy - 0.5 * 1400 * tFlight * tFlight) / tFlight, g: 1400, life: 4, r: 9, dmg: e.def.dmg, color: pd.color, t: 0 });
-  }
-  tone('square', 500, 200, 0.07, 0.04);
-}
-
-function updateEnemies(dt) {
-  const p = player;
-  const pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
-  for (const e of enemies) {
-    if (e.dead) continue;
-    e.t += dt; e.flash -= dt;
-    const ecx = e.x + e.w / 2, ecy = e.y + e.h / 2;
-    const dist = Math.abs(pcx - ecx);
-    if (dist > W * 1.2) continue; // далеко — спит
-    if (e.frozen > 0) {
-      e.frozen -= dt;
-      if (!e.fly || e.inLiquid) { e.vy = Math.min(e.vy + GRAVITY * dt, 1000); const r = moveBody(e, 0, e.vy * dt); if (r.landed) e.vy = 0; }
-      if (e.frozen <= 0) { shards(ecx, ecy, '#bff4ff', 8); SFX.crumble(); }
-      if (e.y > H + 50) e.dead = true;
-      continue;
-    }
-    const toP = Math.sign(pcx - ecx) || 1;
-    const def = e.def;
-    if (e.inLiquid) {
-      // выпрыгивает из лавы/кислоты
-      if (e.state === 'idle') { e.cd -= dt; e.y = e.homeY + 30; if (e.cd <= 0 && dist < 500) { e.state = 'jump'; e.vy = -1050; SFX.splash(); sparks(ecx, e.homeY, level.theme.liquid[0], 10); } }
-      else { e.vy += GRAVITY * 0.9 * dt; e.y += e.vy * dt; e.face = e.vy < 0 ? toP : e.face; if (e.y > e.homeY + 30) { e.state = 'idle'; e.cd = rand(1.2, 2.4); SFX.splash(); } }
-    } else if (e.type === 'e') {
-      walkAI(e, dt, def.speed);
-    } else if (e.type === 'f' || (e.type === 'j' && level.underwater)) {
-      flyAI(e, dt, dist, pcx, pcy);
-    } else if (e.type === 'g') {
-      e.face = toP;
-      gravityAI(e, dt);
-      e.cd -= dt;
-      if (e.cd <= 0 && dist < 760 && Math.abs(pcy - ecy) < 380) { enemyShoot(e); e.cd = def.proj && def.proj.kind === 'bullet' ? 1.7 : 2.1; e.recoil = 0.2; }
-      e.recoil = Math.max(0, (e.recoil || 0) - dt);
-    } else if (e.type === 'j') {
-      gravityAI(e, dt);
-      if (e.onGround) {
-        e.vx *= 0.8; e.cd -= dt;
-        if (e.cd <= 0 && dist < 620) { e.vy = -rand(650, 820); e.vx = toP * def.speed * rand(0.9, 1.4); e.face = toP; e.cd = rand(0.9, 1.6); e.onGround = false; e.squash = 0.2; }
-      }
-      e.squash = Math.max(0, (e.squash || 0) - dt);
-    } else if (e.type === 'z') {
-      if (e.state === 'charge') { e.vx = e.face * def.speed * 3.4; e.st -= dt; if (e.st <= 0) { e.state = 'stun'; e.st = 0.8; } if (Math.random() < dt * 20) puff(ecx - e.face * e.w / 2, e.y + e.h, 0.6); }
-      else if (e.state === 'stun') { e.vx *= 0.85; e.st -= dt; if (e.st <= 0) e.state = 'idle'; }
-      else if (e.state === 'wind') { e.vx = 0; e.st -= dt; if (e.st <= 0) { e.state = 'charge'; e.st = 1.1; SFX.boss(); } }
-      else { walkAI(e, dt, def.speed); if (dist < 430 && Math.abs(pcy - ecy) < 120) { e.face = toP; e.state = 'wind'; e.st = 0.55; } }
-      if (e.state !== 'idle') gravityAI(e, dt, true);
-    }
-    // Касание игрока
-    const eb = { x: e.x + 6, y: e.y + 6, w: e.w - 12, h: e.h - 10 };
-    if (state === 'play' && overlap(eb, p)) hurtPlayer(def.dmg, ecx);
-    if (e.y > H + 60) e.dead = true;
-  }
-  enemies = enemies.filter(e => !e.dead);
-}
-function gravityAI(e, dt, keepVx) {
-  if (level.underwater) e.vy = Math.min(e.vy + 600 * dt, 220); else e.vy = Math.min(e.vy + GRAVITY * dt, 1200);
-  const r = moveBody(e, e.vx * dt, e.vy * dt);
-  if (r.hitX && keepVx) { e.state = 'stun'; e.st = 0.9; e.vx = 0; shake = 0.15; SFX.hit(); }
-  if (r.landed) { e.vy = 0; e.onGround = true; } else e.onGround = false;
-  if (r.ceil) e.vy = 0;
-  return r;
-}
-function walkAI(e, dt, speed) {
-  if (e.face === 0) e.face = -1;
-  e.vx = e.face * speed;
-  const r = gravityAI(e, dt);
-  if (e.onGround) {
-    // разворот у стены или края
-    const aheadX = e.face > 0 ? e.x + e.w + 4 : e.x - 4;
-    const c = Math.floor(aheadX / TS), rr = Math.floor((e.y + e.h + 4) / TS);
-    const groundAhead = tileAt(c, rr) !== 0;
-    const hazard = charAt(c, rr - 1) === '^' || charAt(c, rr) === '~' || charAt(c, rr - 1) === '~';
-    if (r.hitX || !groundAhead || hazard) e.face = -e.face;
-  }
-}
-function flyAI(e, dt, dist, pcx, pcy) {
-  const ecx = e.x + e.w / 2;
-  if (e.state === 'swoop') {
-    e.x += e.vx * dt; e.y += e.vy * dt;
-    e.st -= dt;
-    if (e.st <= 0 || e.y > H - 120) { e.state = 'return'; }
-  } else if (e.state === 'return') {
-    const dx = e.homeX - ecx, dy = e.homeY - e.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 20) { e.state = 'idle'; e.cd = rand(1.2, 2.2); }
-    else { e.x += dx / d * 220 * dt; e.y += dy / d * 220 * dt; e.face = Math.sign(dx) || e.face; }
-  } else {
-    e.y = e.homeY + Math.sin(e.t * 2.2) * 26;
-    e.x = e.homeX - e.w / 2 + Math.sin(e.t * 0.9) * 50;
-    e.face = Math.cos(e.t * 0.9) > 0 ? 1 : -1;
-    e.cd -= dt;
-    if (e.cd <= 0 && dist < 460) {
-      const dx = pcx - ecx, dy = pcy - (e.y + e.h / 2);
-      const d = Math.hypot(dx, dy) || 1;
-      const sp = e.def.speed;
-      e.vx = dx / d * sp; e.vy = dy / d * sp; e.face = Math.sign(dx) || 1;
-      e.state = 'swoop'; e.st = Math.min(1.6, d / sp + 0.25);
-      if (e.def.draw === 'crow') tone('sawtooth', 700, 300, 0.2, 0.04);
-    }
-  }
-  // летуны не проходят сквозь стены
-  const c = Math.floor((e.x + e.w / 2) / TS), r = Math.floor((e.y + e.h / 2) / TS);
-  if (tileAt(c, r) === 1 && e.state === 'swoop') e.state = 'return';
 }
 
 // ---------- Механизмы ----------
@@ -970,7 +827,7 @@ function damageBoss(d) {
     level.arena = null;
     banner = { text: 'ПОБЕДА!', sub: b.def.name + ' повержен(а)!', t: 0, color: '#b6ff4a' };
     ebullets = [];
-    for (const e of enemies) if (e.summoned) damageEnemy(e, 99, e.x);
+    for (const e of enemies) if (e.summoned) damageEnemy(e, 99, e.x, 'blast');
   }
 }
 function explodeFx(x, y) { SFX.boom(); ring(x, y, '#ffb43a', 80); sparks(x, y, '#ffd23f', 18, 380); puff(x, y, 2, 0, 'rgba(90,70,60,0.8)'); }
