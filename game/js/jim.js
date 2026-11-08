@@ -18,13 +18,28 @@ function around(p, a, sx = 1, sy = 1) {
   if (sx !== 1 || sy !== 1) m = MX.mul(m, MX.s(sx, sy));
   return MX.mul(m, MX.t(-p[0], -p[1]));
 }
-function drawPart(rigName, name, m) {
+// Перекрашенные копии спрайтов: фильтр применяется ОДИН раз, а не в каждом кадре
+const tintCache = new Map();
+function tinted(img, filter) {
+  if (!filter) return img;
+  let m = tintCache.get(img);
+  if (!m) tintCache.set(img, m = {});
+  if (!m[filter]) {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.filter = filter; g.drawImage(img, 0, 0);
+    m[filter] = c;
+  }
+  return m[filter];
+}
+function drawPart(rigName, name, m, filter) {
   const r = RIG[rigName], img = IMG[rigName + '_' + name];
   if (!img || !img.width) return;
   const [x, y, w, h] = r.parts[name];
   ctx.save();
   ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-  ctx.drawImage(img, x, y, w, h);
+  ctx.drawImage(tinted(img, filter), x, y, w, h);
   ctx.restore();
 }
 
@@ -71,6 +86,12 @@ function poseFall(t, vy) {
 function poseGlide(t) {
   return { ...POSE0, thL: 0.08 + Math.sin(t * 5) * 0.16, shL: 0.25, thR: -0.08 - Math.sin(t * 5) * 0.16, shR: 0.25,
     armB: 1.55 + Math.sin(t * 8) * 0.12, armF: -0.5 + Math.sin(t * 8 + 1) * 0.08, hsy: 1.18, head: 0, bodyY: Math.sin(t * 5) * 4 };
+}
+// Полёт на джетпаке: корпус чуть вперёд, ноги вместе и назад, руки прижаты
+function poseJet(t) {
+  const f = Math.sin(t * 22);
+  return { ...POSE0, lean: 0.14, bodyY: f * 2, thL: 0.3 + f * 0.04, shL: 0.5, thR: 0.12 - f * 0.04, shR: 0.6,
+    armB: 0.5 + Math.sin(t * 9) * 0.1, armF: -0.55, head: -0.1, hsy: 1.02 };
 }
 function poseHurt(t) {
   return { ...POSE0, lean: -0.32, head: -0.45, hsy: 0.92, armB: 2.4 + Math.sin(t * 30) * 0.2, armF: -1.3, thL: -0.6, shL: 0.9, thR: 0.35, shR: 0.4 };
@@ -127,7 +148,8 @@ function updateJimAnim(p, dt, dir) {
     T = poseCrouch(a.t, a.phase, moving); k = lerpK(dt, 20);
   }
   else if (!p.onGround) {
-    if (p.glide) T = poseGlide(a.t);
+    if (p.jet) T = poseJet(a.t);
+    else if (p.glide) T = poseGlide(a.t);
     else if (p.vy < -120) T = poseJumpUp(a.t);
     else T = poseFall(a.t, p.vy);
     k = lerpK(dt, 12);
@@ -228,7 +250,34 @@ function drawNeckWhip(B) {
   ctx.restore();
 }
 
-function drawJimRig(B, glide) {
+// Джетпак за спиной (координаты — в пространстве спрайта торса)
+function drawJetpack(B, jet) {
+  ctx.save();
+  ctx.transform(...B.torso);
+  ctx.lineWidth = 12; ctx.strokeStyle = INK; ctx.lineJoin = 'round';
+  if (jet.on) {
+    // пламя из сопла
+    const fl = 220 + Math.sin(gameTime * 60) * 50 + Math.random() * 50;
+    ctx.fillStyle = '#ff7a1a';
+    ctx.beginPath(); ctx.moveTo(110, 700); ctx.quadraticCurveTo(150, 700 + fl, 160, 720 + fl * 1.15); ctx.quadraticCurveTo(170, 700 + fl, 210, 700); ctx.fill();
+    ctx.fillStyle = '#ffe95a';
+    ctx.beginPath(); ctx.moveTo(132, 700); ctx.quadraticCurveTo(155, 700 + fl * 0.6, 160, 710 + fl * 0.7); ctx.quadraticCurveTo(165, 700 + fl * 0.6, 188, 700); ctx.fill();
+  }
+  // ремень, бак, полоса, сопло
+  ctx.fillStyle = '#5a5f6e'; ctx.fillRect(215, 470, 60, 40);
+  ctx.beginPath(); ctx.roundRect(90, 380, 140, 300, 60); ctx.fillStyle = '#c9ced8'; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#e8343a'; ctx.fillRect(96, 470, 128, 46);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(118, 410, 22, 200);
+  ctx.beginPath(); ctx.moveTo(115, 670); ctx.lineTo(205, 670); ctx.lineTo(220, 715); ctx.lineTo(100, 715); ctx.closePath();
+  ctx.fillStyle = '#3a3f4a'; ctx.fill(); ctx.stroke();
+  // индикатор топлива на баке
+  ctx.fillStyle = INK; ctx.fillRect(140, 540, 40, 110);
+  ctx.fillStyle = jet.fuel > 0.3 ? '#7dff3a' : '#ff4a3a'; ctx.fillRect(148, 642 - 94 * jet.fuel, 24, 94 * jet.fuel);
+  ctx.restore();
+}
+
+function drawJimRig(B, glide, jet) {
+  if (jet) drawJetpack(B, jet);
   drawPart('jim', 'armB', B.armB);
   drawPart('jim', 'shinR', B.shR);
   drawPart('jim', 'thighR', B.thR);
@@ -274,10 +323,6 @@ function aimPlayer(p) {
   a.aimT = 0.45;
   a.pose.armF = -a.pose.lean;
 }
-function jimWhipTip(p) {
-  const B = playerBones(p);
-  return MX.apply(B.head, [560, 160]);
-}
 
 // ---------- Ворона: машет крыльями ----------
 function drawCrowRig(x, y, width, face, flap, tilt, filter) {
@@ -287,11 +332,10 @@ function drawCrowRig(x, y, width, face, flap, tilt, filter) {
   if (tilt) ctx.rotate(tilt);
   ctx.scale(-face * k, k);          // исходный спрайт смотрит влево
   ctx.translate(-r.center[0], -r.center[1] + flap * 30);
-  if (filter) ctx.filter = filter;
   const fold = 1 - Math.abs(flap) * 0.18;
-  drawPart('crow', 'wingR', around(r.pivots.wingR, -flap * 0.95, fold, 1));
-  drawPart('crow', 'wingL', around(r.pivots.wingL, flap * 1.05, fold, 1));
-  drawPart('crow', 'body', [1, 0, 0, 1, 0, 0]);
+  drawPart('crow', 'wingR', around(r.pivots.wingR, -flap * 0.95, fold, 1), filter);
+  drawPart('crow', 'wingL', around(r.pivots.wingL, flap * 1.05, fold, 1), filter);
+  drawPart('crow', 'body', [1, 0, 0, 1, 0, 0], filter);
   ctx.restore();
 }
 
@@ -325,7 +369,6 @@ function drawPrincessRig(x, bottom, height, t, mood, flip = 1) {
   }
   ctx.restore();
 }
-
 
 function crowFlap(t, speed = 14) {
   // взмах: быстро вниз, медленнее вверх

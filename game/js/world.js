@@ -37,7 +37,7 @@ function updateParticles(dt) {
     if (p.kind === 'spark') { p.vx *= 0.9; p.vy *= 0.9; }
   }
   particles = particles.filter(p => p.life > 0);
-  if (particles.length > 600) particles.splice(0, particles.length - 600);
+  if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
   for (const f of floaters) { f.t += dt; f.y -= 50 * dt; }
   floaters = floaters.filter(f => f.t < 1.1);
 }
@@ -52,7 +52,7 @@ function chunkRows(id) {
 }
 
 function newPlayer(x, y) {
-  return { x, y, w: PLAYER_W, h: STAND_H, vx: 0, vy: 0, onGround: false, face: 1, crouch: false, glide: false, inv: 0, health: 100,
+  return { x, y, w: PLAYER_W, h: STAND_H, vx: 0, vy: 0, onGround: false, face: 1, crouch: false, glide: false, jet: false, fuel: 1, jetSnd: 0, inv: 0, health: 100,
     weapon: 0, shootCd: 0, whip: 0, whipCd: 0, whipHit: false, anim: newJimAnim(), keys: 0, oxygen: 100, inWater: false,
     coyote: 0, jumpBuf: 0, jumpCut: false, ride: null, teleLock: true, deathFly: false, dropT: 0, conveyor: 0, airT: 0 };
 }
@@ -73,7 +73,7 @@ function loadLevel(idx) {
     off += p.w;
   });
   level = { def, loc, theme: loc.theme, cols, w: cols * TS, grid, group, chunks: chunkStarts, active: {}, crumble: {}, rhp: {}, springT: {},
-    phase: false, phaseT: 0, segs: {}, segVer: 0, dark: !!loc.theme.dark, underwater: !!loc.theme.underwater, slippery: !!loc.theme.slippery,
+    phase: false, phaseT: 0, segs: {}, dark: !!loc.theme.dark, underwater: !!loc.theme.underwater, slippery: !!loc.theme.slippery,
     checkpoint: null, arena: null, hints: [] };
   enemies = []; bullets = []; ebullets = []; items = []; particles = []; floaters = [];
   movers = []; crates = []; levers = []; plates = []; teleports = []; geysers = []; icicles = []; crushers = []; vents = []; bubbles = []; lamps = []; npcs = []; checkpoints = [];
@@ -162,7 +162,7 @@ function findFloor(c, r) {
 function groupActive(g) { return !!level.active[g]; }
 function tileAt(c, r) {
   if (c < 0 || c >= level.cols) return 1;
-  if (r < 0) return level.theme.ceiling ? 1 : 0;
+  if (r < 0) return level.theme.ceiling || tileAt(c, 0) === 1 ? 1 : 0; // стены до верха экрана нельзя перелететь
   if (r >= ROWS) return 0;
   const ch = level.grid[r][c];
   switch (ch) {
@@ -178,7 +178,11 @@ function tileAt(c, r) {
 }
 const charAt = (c, r) => (r < 0 || r >= ROWS || c < 0 || c >= level.cols) ? ' ' : level.grid[r][c];
 function setTile(c, r, ch) { level.grid[r][c] = ch; invalidateSeg(c); }
-function invalidateSeg(c) { const s = Math.floor(c * TS / SEG_W); delete level.segs[s]; }
+function invalidateSeg(c) {
+  // тайл рисуется с соседями, поэтому сбрасываем все сегменты, которых он касается
+  const s0 = Math.floor((c - 1) * TS / SEG_W), s1 = Math.floor((c + 2) * TS / SEG_W);
+  for (let s = s0; s <= s1; s++) if (level.segs[s]) { segPool.push(level.segs[s]); delete level.segs[s]; }
+}
 const SEG_W = 960;
 
 // Движение AABB по тайлам. Возвращает {hitX, hitY, landed, landTile}
@@ -302,8 +306,9 @@ function updatePlayer(dt) {
   // Горизонталь
   const maxV = p.crouch ? CRAWL : p.inWater ? 270 : RUN;
   const slip = level.slippery && p.onGround;
-  const accel = slip ? 700 : p.onGround ? 3600 : 2200;
-  const fric = slip ? 260 : p.onGround ? 3400 : 900;
+  const airCtl = p.jet || p.glide;   // на джетпаке и вертолёте управление в воздухе точнее
+  const accel = slip ? 700 : p.onGround ? 3600 : airCtl ? 3200 : 2200;
+  const fric = slip ? 260 : p.onGround ? 3400 : airCtl ? 2600 : 900;
   if (dir) { p.vx += dir * accel * dt; if (Math.abs(p.vx) > maxV) p.vx = Math.sign(p.vx) * Math.max(maxV, Math.abs(p.vx) - fric * dt); p.face = dir; }
   else { const s = Math.sign(p.vx); p.vx -= s * fric * dt; if (Math.sign(p.vx) !== s) p.vx = 0; }
 
@@ -316,19 +321,33 @@ function updatePlayer(dt) {
     if (p.jumpBuf > 0) { p.vy = -430; p.jumpBuf = 0; p.anim.stroke = 1; SFX.bubble(); bubbles.push({ x: p.x + p.w / 2, y: p.y + 20, vy: -60, r: 6, t: 0, deco: true }); }
     p.vy += 650 * dt;
     p.vy = clamp(p.vy, -460, 210);
-    p.glide = false;
+    p.glide = false; p.jet = false;
   } else {
+    let jumped = false;
     if (p.jumpBuf > 0 && p.coyote > 0) {
       let ok = true;
       if (p.crouch) { if (boxFree(p.x, p.y + p.h - STAND_H, p.w, STAND_H)) { p.crouch = false; p.y += p.h - STAND_H; p.h = STAND_H; } else ok = false; }
       if (ok) {
         p.vy = -JUMP_V; p.onGround = false; p.coyote = 0; p.jumpBuf = 0; p.jumpCut = false; p.ride = null;
         p.anim.takeoffT = 0.14; SFX.jump(); puff(p.x + p.w / 2, p.y + p.h, 0.8);
+        jumped = true;
       }
+    }
+    // Джетпак: ещё раз нажми прыжок в воздухе и держи — тяга вверх, пока есть топливо
+    if (p.onGround) { p.fuel = Math.min(1, p.fuel + dt * JET_REFILL); p.jet = false; }
+    else if (pressed.jump && !jumped && p.fuel > 0.05) { p.jet = true; p.jumpBuf = 0; }
+    if (p.jet && (!keys.jump || p.fuel <= 0 || p.onGround)) p.jet = false;
+    if (p.jet) {
+      p.fuel = Math.max(0, p.fuel - dt / JET_TIME);
+      p.vy = Math.max(p.vy - JET_THRUST * dt, -JET_MAX_UP);
+      p.jumpCut = true;
+      p.jetSnd -= dt;
+      if (p.jetSnd <= 0) { p.jetSnd = 0.09; SFX.jet(); }
+      if (Math.random() < dt * 25) { const n = MX.apply(playerBones(p).torso, [160, 760]); particles.push({ kind: 'puff', x: n.x + rand(-4, 4), y: n.y, vx: rand(-30, 30), vy: rand(200, 320), life: 0.35, max: 0.35, size: rand(6, 10), color: 'rgba(255,200,120,0.75)' }); }
     }
     if (!keys.jump && p.vy < -300 && !p.jumpCut) { p.vy *= 0.5; p.jumpCut = true; }
     p.vy += GRAVITY * dt;
-    p.glide = !p.onGround && keys.jump && p.vy > 0;
+    p.glide = !p.onGround && keys.jump && p.vy > 0 && !p.jet;
     if (p.glide) p.vy = Math.min(p.vy, GLIDE_FALL);
     p.vy = Math.min(p.vy, 1300);
   }

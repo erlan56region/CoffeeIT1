@@ -214,7 +214,7 @@ function drawScooter(x, y, t, color = '#e8343a', boost = 0, jim = true, tilt = 0
   ctx.strokeStyle = '#c8c8d8'; ctx.lineWidth = 4; ctx.stroke();
   ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(18, -64); ctx.lineTo(38, -60); ctx.stroke();
   // фара
-  ctx.fillStyle = '#ffe9a0'; ctx.shadowColor = '#ffe14a'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(66, -6, 7, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(66, -6, 7, 0, 7); ctx.fill();
   // нос с самолётным пропеллером
   ctx.beginPath(); ctx.moveTo(72, -10); ctx.quadraticCurveTo(96, -4, 96, 4); ctx.quadraticCurveTo(96, 12, 72, 16); ctx.closePath(); inkPath('#c8c8d8', 3);
   ctx.save(); ctx.translate(98, 3);
@@ -291,7 +291,7 @@ function drawRace() {
     ctx.save(); ctx.translate(x, g.y);
     const took = g.taken.me;
     ctx.strokeStyle = INK; ctx.lineWidth = 14; ctx.beginPath(); ctx.ellipse(0, 0, 26, 70, 0, 0, 7); ctx.stroke();
-    ctx.strokeStyle = took ? 'rgba(125,255,58,0.35)' : '#7dff3a'; ctx.lineWidth = 8; ctx.shadowColor = '#7dff3a'; ctx.shadowBlur = took ? 0 : 20; ctx.stroke();
+    ctx.strokeStyle = took ? 'rgba(125,255,58,0.35)' : '#7dff3a'; ctx.lineWidth = 8; ctx.stroke();
     ctx.restore();
   }
   for (const g of R.gates) {
@@ -319,7 +319,7 @@ function drawRace() {
     }
     ctx.restore();
   }
-  for (const s of R.shots) { const x = s.x - cam; ctx.fillStyle = '#7ff6ff'; ctx.shadowColor = '#7ff6ff'; ctx.shadowBlur = 14; ctx.beginPath(); ctx.ellipse(x, s.y, 16, 5, 0, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+  for (const s of R.shots) { const x = s.x - cam; ctx.fillStyle = '#7ff6ff'; ctx.beginPath(); ctx.ellipse(x, s.y, 16, 5, 0, 0, 7); ctx.fill(); }
   // соперники и игрок
   const all = [...R.rivals.map(r => ({ r, x: r.x })), { r: me, x: me.x }].sort((a, b) => a.r.y - b.r.y);
   for (const { r } of all) {

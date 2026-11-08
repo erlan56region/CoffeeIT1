@@ -18,18 +18,21 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
   };
 }
 const cvs = document.getElementById('game');
-const ctx = cvs.getContext('2d');
+const ctx = cvs.getContext('2d', { alpha: false }); // непрозрачный холст — браузеру проще компоновать
 
 // ---------- Физика ----------
 const GRAVITY = 2300, JUMP_V = 930, RUN = 400, CRAWL = 170, GLIDE_FALL = 150;
 const JIM_H = 160, STAND_H = 134, CROUCH_H = 90, PLAYER_W = 40;
+// Джетпак: запас топлива (сек тяги), ускорение вверх, предел скорости подъёма, заправка на земле (баков/сек)
+const JET_TIME = 0.9, JET_THRUST = 3300, JET_MAX_UP = 360, JET_REFILL = 1.6;
+const MAX_PARTICLES = 220;
 
 // ---------- Ассеты ----------
 const IMG = {};
 const RIG = window.RIG || null;
 const BG_NAMES = ['asteroid', 'junk', 'ice', 'lava', 'water', 'race', 'whale', 'factory', 'crystal', 'slime', 'dark'];
 function assetList() {
-  const list = ['jim.png', 'princess.png', 'crow.png', 'cow.png', 'bg.jpg'].map(f => [f.split('.')[0], f]);
+  const list = [['cow', 'cow.png']];
   if (RIG) for (const n of Object.keys(RIG)) for (const p of Object.keys(RIG[n].parts)) list.push([`${n}_${p}`, `rig/${n}_${p}.png`]);
   for (const b of BG_NAMES) list.push(['bg_' + b, `bg/${b}.jpg`]);
   return list;
@@ -50,6 +53,13 @@ function initAudio() {
   if (actx) return;
   try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
 }
+// Один и тот же звук не чаще раза в 40 мс — иначе десятки осцилляторов в секунду
+const lastSnd = {};
+function throttled(name) {
+  const t = actx.currentTime;
+  if (t - (lastSnd[name] || -1) < 0.04) return true;
+  lastSnd[name] = t; return false;
+}
 function tone(type, f0, f1, dur, vol = 0.15, delay = 0) {
   if (!actx || muted) return;
   const t = actx.currentTime + delay;
@@ -62,17 +72,22 @@ function tone(type, f0, f1, dur, vol = 0.15, delay = 0) {
   o.connect(g).connect(actx.destination);
   o.start(t); o.stop(t + dur + 0.02);
 }
+// Шум: буфер создаётся один раз, затухание — огибающей громкости
+let noiseBuf = null;
 function noise(dur, vol = 0.12, freq = 800) {
   if (!actx || muted) return;
-  const len = Math.floor(actx.sampleRate * dur);
-  const buf = actx.createBuffer(1, len, actx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const s = actx.createBufferSource(); s.buffer = buf;
+  if (!noiseBuf) {
+    noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = actx.currentTime;
+  const s = actx.createBufferSource(); s.buffer = noiseBuf;
   const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
-  const g = actx.createGain(); g.gain.value = vol;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.linearRampToValueAtTime(0, t + dur);
   s.connect(f).connect(g).connect(actx.destination);
-  s.start();
+  s.start(t, Math.random() * 0.4); s.stop(t + dur);
 }
 const SFX = {
   shoot: () => tone('square', 1200, 300, 0.09, 0.06),
@@ -107,7 +122,9 @@ const SFX = {
   beep: () => tone('square', 660, 660, 0.12, 0.07),
   go: () => tone('square', 1320, 1320, 0.35, 0.08),
   boost: () => { tone('sawtooth', 300, 1200, 0.4, 0.07); noise(0.4, 0.05, 2000); },
+  jet: () => noise(0.13, 0.05, 900),
 };
+for (const k of Object.keys(SFX)) { const fn = SFX[k]; SFX[k] = () => { if (actx && !muted && !throttled(k)) fn(); }; }
 
 // ---------- Ввод ----------
 const keys = {}, pressed = {};

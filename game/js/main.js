@@ -117,7 +117,6 @@ function drawTitleLogo(y) {
   });
   ctx.restore();
 }
-const titleAnim = (typeof newJimAnim === 'function') ? newJimAnim() : null;
 function drawTitle() {
   drawBackground('asteroid', gameTime * 40, 1);
   ctx.fillStyle = 'rgba(5,0,20,0.35)'; ctx.fillRect(0, 0, W, H);
@@ -138,9 +137,9 @@ function drawTitle() {
   if (Math.floor(gameTime * 2) % 2 === 0) outlinedText('НАЖМИ ENTER ИЛИ КОСНИСЬ ЭКРАНА', W / 2, 466, 38, '#ffe14a');
   ctx.fillStyle = 'rgba(5,0,20,0.75)'; ctx.beginPath(); ctx.roundRect(W / 2 - 560, 510, 1120, 132, 14); ctx.fill();
   const lines = [
-    '← → / A D — бег   •   ↑ / W / ПРОБЕЛ — прыжок (держи в падении — голова-вертолёт)   •   ↓ / S — присесть',
+    '← → / A D — бег   •   ↑ / W / ПРОБЕЛ — прыжок, ещё раз в воздухе — ДЖЕТПАК   •   ↓ / S — присесть',
     'X / J — стрелять   •   Z / K — удар головой-хлыстом   •   Q / E / Tab или 1–5 — сменить оружие',
-    '↓ + прыжок — спрыгнуть с платформы   •   P / Esc — пауза   •   M — звук',
+    'держи прыжок в падении — вертолёт   •   ↓ + прыжок — спрыгнуть вниз   •   P / Esc — пауза   •   M — звук',
     'Головоломки: ключи и замки, рычаги, кнопки и ящики, телепорты, мигающие блоки, тайные стены',
   ];
   lines.forEach((l, i) => plainText(l, W / 2, 534 + i * 28, 17, i === 3 ? '#b6ff4a' : '#e8e0ff'));
